@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "680713447360",
+    "project_id": "indesign-mobiliarios",
+    "storage_bucket": "indesign-mobiliarios.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:680713447360:android:883b6de5d62756dbc40a25",
+        "android_client_info": {
+          "package_name": "com.example.indesign_mobiliarios_app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "680713447360-kijv41j0qehjl2ggaub7t10r38n7s13t.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.indesign_mobiliarios_app",
+            "certificate_hash": "4f01f9d05d320c3b50af11a3d9724f10024385a4"
+          }
+        },
+        {
+          "client_id": "680713447360-4etlenvhrk5g50regvcuk60aru6efp0i.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBt9Obv_LxnGc_Cv2JXBNy-kFM6XnKZl38"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "680713447360-4etlenvhrk5g50regvcuk60aru6efp0i.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,43 @@
+name: indesign_mobiliarios_app
+description: "A new Flutter project."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+  cloud_functions: ^4.7.6
+  firebase_core: ^2.32.0
+  firebase_auth: ^4.20.0
+  cloud_firestore: ^4.17.5
+  firebase_storage: ^11.7.7
+  image_picker: ^1.2.0
+  file_picker: ^8.0.7
+  firebase_messaging: ^14.9.4
+  intl: ^0.19.0
+  google_sign_in: ^6.2.1
+  
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  
+  flutter_lints: ^3.0.0
+  flutter_launcher_icons: ^0.13.1
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/google_logo/google_logo.png
+    - assets/logo/logo.png # <- Referencia añadida para el logo de la app
+
+flutter_launcher_icons:
+  android: "ic_launcher"
+  ios: true
+  image_path: "assets/logo/logo.png"
+  min_sdk_android: 21
