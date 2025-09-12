@@ -10,11 +10,11 @@ import 'package:indesign_mobiliarios_app/screens/admin/balance_screen.dart';
 import 'package:indesign_mobiliarios_app/screens/admin/create_project_screen.dart';
 import 'package:indesign_mobiliarios_app/screens/admin/credit_sales_list_screen.dart';
 import 'package:indesign_mobiliarios_app/screens/admin/inventory_screen.dart';
-import 'package:indesign_mobiliarios_app/screens/admin/materials_catalog_screen.dart';
 import 'package:indesign_mobiliarios_app/screens/admin/record_payment_screen.dart';
 import 'package:indesign_mobiliarios_app/screens/admin/scraps_management_screen.dart';
 import 'package:indesign_mobiliarios_app/screens/admin/transaction_history_screen.dart';
 import 'package:indesign_mobiliarios_app/screens/admin/upcoming_installments_screen.dart';
+import 'package:indesign_mobiliarios_app/screens/admin/materials_management_screen.dart';
 
 class AdminDashboardScreen extends StatelessWidget {
   const AdminDashboardScreen({super.key});
@@ -102,8 +102,8 @@ class AdminDashboardScreen extends StatelessWidget {
       },
       {
         'icon': Icons.sell,
-        'label': 'Precios',
-        'screen': const MaterialsCatalogScreen()
+        'label': 'Catálogo',
+        'screen': const MaterialsManagementScreen()
       },
       {
         'icon': Icons.cut,
