@@ -267,7 +267,7 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
                         initialValue: _selectedClientId,
                         hint: const Text('Seleccionar Cliente'),
                         items: _clientsList
-                            .map((client) => DropdownMenuItem<String>(
+                            .map((client) => DropdownMenuItem(
                                 value: client['uid'],
                                 child: Text(client['fullName']!)))
                             .toList(),
@@ -363,7 +363,6 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
   }
 }
 
-// --- DIÁLOGO PARA AÑADIR MATERIAL ---
 enum MaterialInputType { existente, nuevo }
 
 class _AddMaterialDialog extends StatefulWidget {
@@ -375,6 +374,7 @@ class _AddMaterialDialog extends StatefulWidget {
 class _AddMaterialDialogState extends State<_AddMaterialDialog> {
   MaterialInputType _selection = MaterialInputType.existente;
 
+  List<String> _categories = [];
   String? _selectedCategoryName;
   String? _selectedMaterialTypeId;
   String? _selectedVariantId;
@@ -386,6 +386,56 @@ class _AddMaterialDialogState extends State<_AddMaterialDialog> {
   final _newMaterialPriceController = TextEditingController();
   final _newMaterialPresentationController = TextEditingController();
   final _quantityController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchCategories();
+  }
+
+  Future<void> _fetchCategories() async {
+    final snapshot = await FirebaseFirestore.instance
+        .collection('material_categories')
+        .orderBy('name')
+        .get();
+    if (mounted) {
+      setState(() {
+        _categories =
+            snapshot.docs.map((doc) => doc['name'] as String).toList();
+      });
+    }
+  }
+
+  Future<void> _addNewCategory() async {
+    final categoryController = TextEditingController();
+    final newCategory = await showDialog<String>(
+        context: context,
+        builder: (context) => AlertDialog(
+              title: const Text('Añadir Nueva Categoría'),
+              content: TextFormField(
+                  controller: categoryController,
+                  decoration: const InputDecoration(
+                      labelText: 'Nombre de la categoría')),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Cancelar')),
+                ElevatedButton(
+                    onPressed: () =>
+                        Navigator.of(context).pop(categoryController.text),
+                    child: const Text('Añadir')),
+              ],
+            ));
+
+    if (newCategory != null && newCategory.isNotEmpty) {
+      await FirebaseFirestore.instance
+          .collection('material_categories')
+          .add({'name': newCategory});
+      setState(() {
+        _selectedCategoryName = newCategory;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -412,31 +462,18 @@ class _AddMaterialDialogState extends State<_AddMaterialDialog> {
               },
             ),
             const Divider(height: 20),
-
-            // --- VISTA PARA MATERIAL EXISTENTE ---
             if (_selection == MaterialInputType.existente) ...[
-              StreamBuilder<QuerySnapshot>(
-                stream: FirebaseFirestore.instance
-                    .collection('material_categories')
-                    .orderBy('name')
-                    .snapshots(),
-                builder: (context, snapshot) {
-                  if (!snapshot.hasData) return const SizedBox.shrink();
-                  return DropdownButtonFormField<String>(
-                    hint: const Text('Seleccionar Categoría'),
-                    initialValue: _selectedCategoryName,
-                    items: snapshot.data!.docs
-                        .map((doc) => DropdownMenuItem<String>(
-                            value: doc['name'] as String,
-                            child: Text(doc['name'] as String)))
-                        .toList(),
-                    onChanged: (value) => setState(() {
-                      _selectedCategoryName = value;
-                      _selectedMaterialTypeId = null;
-                      _selectedVariantId = null;
-                    }),
-                  );
-                },
+              DropdownButtonFormField<String>(
+                hint: const Text('Seleccionar Categoría'),
+                value: _selectedCategoryName,
+                items: _categories
+                    .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                    .toList(),
+                onChanged: (value) => setState(() {
+                  _selectedCategoryName = value;
+                  _selectedMaterialTypeId = null;
+                  _selectedVariantId = null;
+                }),
               ),
               if (_selectedCategoryName != null)
                 StreamBuilder<QuerySnapshot>(
@@ -448,11 +485,10 @@ class _AddMaterialDialogState extends State<_AddMaterialDialog> {
                     if (!snapshot.hasData) return const SizedBox.shrink();
                     return DropdownButtonFormField<String>(
                       hint: const Text('Seleccionar Material'),
-                      initialValue: _selectedMaterialTypeId,
+                      value: _selectedMaterialTypeId,
                       items: snapshot.data!.docs
-                          .map((doc) => DropdownMenuItem<String>(
-                              value: doc.id,
-                              child: Text(doc['name'] as String)))
+                          .map((doc) => DropdownMenuItem(
+                              value: doc.id, child: Text(doc['name'])))
                           .toList(),
                       onChanged: (value) => setState(() {
                         _selectedMaterialTypeId = value;
@@ -476,12 +512,12 @@ class _AddMaterialDialogState extends State<_AddMaterialDialog> {
                     if (!snapshot.hasData) return const SizedBox.shrink();
                     return DropdownButtonFormField<String>(
                       hint: const Text('Seleccionar Variante'),
-                      initialValue: _selectedVariantId,
+                      value: _selectedVariantId,
                       items: snapshot.data!.docs.map((doc) {
                         final attributes =
                             doc['attributes'] as Map<String, dynamic>;
                         final description = attributes.values.join(' - ');
-                        return DropdownMenuItem<String>(
+                        return DropdownMenuItem(
                             value: doc.id, child: Text(description));
                       }).toList(),
                       onChanged: (value) => setState(() {
@@ -495,44 +531,43 @@ class _AddMaterialDialogState extends State<_AddMaterialDialog> {
                   },
                 ),
             ],
-
-            // --- VISTA PARA MATERIAL NUEVO ---
             if (_selection == MaterialInputType.nuevo) ...[
-              StreamBuilder<QuerySnapshot>(
-                stream: FirebaseFirestore.instance
-                    .collection('material_categories')
-                    .orderBy('name')
-                    .snapshots(),
-                builder: (context, snapshot) {
-                  if (!snapshot.hasData) return const SizedBox.shrink();
-                  return DropdownButtonFormField<String>(
-                    hint: const Text('Seleccionar Categoría'),
-                    initialValue: _selectedCategoryName,
-                    items: snapshot.data!.docs
-                        .map((doc) => DropdownMenuItem<String>(
-                            value: doc['name'] as String,
-                            child: Text(doc['name'] as String)))
-                        .toList(),
-                    onChanged: (value) =>
-                        setState(() => _selectedCategoryName = value),
-                  );
+              DropdownButtonFormField<String>(
+                hint: const Text('Seleccionar Categoría'),
+                value: _selectedCategoryName,
+                items: [
+                  ..._categories.map((c) =>
+                      DropdownMenuItem<String>(value: c, child: Text(c))),
+                  const DropdownMenuItem<String>(
+                      value: 'ADD_NEW',
+                      child: Text('Añadir categoría nueva...',
+                          style: TextStyle(fontStyle: FontStyle.italic))),
+                ],
+                onChanged: (value) {
+                  if (value == 'ADD_NEW') {
+                    _addNewCategory();
+                  } else {
+                    setState(() => _selectedCategoryName = value);
+                  }
                 },
               ),
               TextFormField(
                   controller: _newMaterialNameController,
                   decoration: const InputDecoration(
-                      labelText: 'Nombre del Nuevo Material')),
-              TextFormField(
-                  controller: _newMaterialPriceController,
-                  decoration:
-                      const InputDecoration(labelText: 'Precio Unitario (USD)'),
-                  keyboardType: TextInputType.number),
+                      labelText: 'Nombre del Nuevo Material (Tipo)')),
               TextFormField(
                   controller: _newMaterialPresentationController,
                   decoration: const InputDecoration(
                       labelText: 'Presentación (ej. lámina, caja)')),
+              const Divider(height: 20, thickness: 1),
+              const Text('Primera Variante:',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+              TextFormField(
+                  controller: _newMaterialPriceController,
+                  decoration: const InputDecoration(
+                      labelText: 'Precio de la Variante (USD)'),
+                  keyboardType: TextInputType.number),
             ],
-
             const SizedBox(height: 10),
             TextFormField(
                 controller: _quantityController,
@@ -550,13 +585,33 @@ class _AddMaterialDialogState extends State<_AddMaterialDialog> {
             final quantity = int.tryParse(_quantityController.text) ?? 0;
             if (quantity <= 0) return;
 
-            // Capturar el Navigator antes de cualquier operación async
-            final navigator = Navigator.of(context);
             BudgetItem? itemToReturn;
+            if (_selection == MaterialInputType.nuevo) {
+              final materialTypeRef = await FirebaseFirestore.instance
+                  .collection('material_types')
+                  .add({
+                'name': _newMaterialNameController.text,
+                'categoryName': _selectedCategoryName ?? 'Varios',
+              });
 
-            if (_selection == MaterialInputType.existente &&
-                _selectedVariantSnapshot != null) {
-              // Para materiales existentes, no hay operación asíncrona
+              final variantData = {
+                'attributes': {
+                  'descripcion': 'Estándar'
+                }, // Variante por defecto
+                'price':
+                    double.tryParse(_newMaterialPriceController.text) ?? 0.0,
+                'presentation': _newMaterialPresentationController.text,
+              };
+              await materialTypeRef.collection('variants').add(variantData);
+
+              itemToReturn = BudgetItem(
+                name: '${_newMaterialNameController.text} (Estándar)',
+                category: _selectedCategoryName ?? 'Varios',
+                price: variantData['price'] as double,
+                quantity: quantity,
+                presentation: variantData['presentation'] as String,
+              );
+            } else if (_selectedVariantSnapshot != null) {
               final materialName = _selectedMaterialTypeSnapshot!['name'];
               final categoryName = _selectedCategoryName!;
               final variantData =
@@ -572,40 +627,8 @@ class _AddMaterialDialogState extends State<_AddMaterialDialog> {
                 quantity: quantity,
                 presentation: variantData['presentation'],
               );
-
-              // No hay async gap, podemos usar navigator directamente
-              navigator.pop(itemToReturn);
-            } else if (_selection == MaterialInputType.nuevo) {
-              // Para materiales nuevos, hay operación asíncrona
-              final newMaterial = {
-                'name': _newMaterialNameController.text,
-                'categoryName': _selectedCategoryName ?? 'Varios',
-                'price':
-                    double.tryParse(_newMaterialPriceController.text) ?? 0.0,
-                'presentation': _newMaterialPresentationController.text,
-                'lastSupplier': '',
-              };
-
-              try {
-                await FirebaseFirestore.instance
-                    .collection('materials')
-                    .add(newMaterial);
-
-                itemToReturn = BudgetItem(
-                  name: newMaterial['name'] as String,
-                  category: newMaterial['categoryName'] as String,
-                  price: newMaterial['price'] as double,
-                  quantity: quantity,
-                  presentation: newMaterial['presentation'] as String,
-                );
-
-                // Usar el navigator capturado después del async gap
-                navigator.pop(itemToReturn);
-              } catch (e) {
-                // En caso de error, cerrar el diálogo sin retornar nada
-                navigator.pop();
-              }
             }
+            if (mounted) Navigator.of(context).pop(itemToReturn);
           },
           child: const Text('Añadir al Presupuesto'),
         ),
