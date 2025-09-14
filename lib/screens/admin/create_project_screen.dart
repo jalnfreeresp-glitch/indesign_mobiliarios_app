@@ -465,7 +465,7 @@ class _AddMaterialDialogState extends State<_AddMaterialDialog> {
             if (_selection == MaterialInputType.existente) ...[
               DropdownButtonFormField<String>(
                 hint: const Text('Seleccionar Categoría'),
-                value: _selectedCategoryName,
+                initialValue: _selectedCategoryName,
                 items: _categories
                     .map((c) => DropdownMenuItem(value: c, child: Text(c)))
                     .toList(),
@@ -485,7 +485,7 @@ class _AddMaterialDialogState extends State<_AddMaterialDialog> {
                     if (!snapshot.hasData) return const SizedBox.shrink();
                     return DropdownButtonFormField<String>(
                       hint: const Text('Seleccionar Material'),
-                      value: _selectedMaterialTypeId,
+                      initialValue: _selectedMaterialTypeId,
                       items: snapshot.data!.docs
                           .map((doc) => DropdownMenuItem(
                               value: doc.id, child: Text(doc['name'])))
@@ -512,7 +512,7 @@ class _AddMaterialDialogState extends State<_AddMaterialDialog> {
                     if (!snapshot.hasData) return const SizedBox.shrink();
                     return DropdownButtonFormField<String>(
                       hint: const Text('Seleccionar Variante'),
-                      value: _selectedVariantId,
+                      initialValue: _selectedVariantId,
                       items: snapshot.data!.docs.map((doc) {
                         final attributes =
                             doc['attributes'] as Map<String, dynamic>;
@@ -534,7 +534,7 @@ class _AddMaterialDialogState extends State<_AddMaterialDialog> {
             if (_selection == MaterialInputType.nuevo) ...[
               DropdownButtonFormField<String>(
                 hint: const Text('Seleccionar Categoría'),
-                value: _selectedCategoryName,
+                initialValue: _selectedCategoryName,
                 items: [
                   ..._categories.map((c) =>
                       DropdownMenuItem<String>(value: c, child: Text(c))),
@@ -628,7 +628,8 @@ class _AddMaterialDialogState extends State<_AddMaterialDialog> {
                 presentation: variantData['presentation'],
               );
             }
-            if (mounted) Navigator.of(context).pop(itemToReturn);
+            if (!context.mounted) return;
+            Navigator.of(context).pop(itemToReturn);
           },
           child: const Text('Añadir al Presupuesto'),
         ),
