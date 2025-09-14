@@ -11,6 +11,15 @@ class MaterialsManagementScreen extends StatefulWidget {
 }
 
 class _MaterialsManagementScreenState extends State<MaterialsManagementScreen> {
+  final List<String> _categories = [
+    'Laminas',
+    'Tornillos',
+    'Herrajes',
+    'Cantos',
+    'Formicas',
+    'Consumibles'
+  ];
+
   void _showAddCategoryDialog() {
     final nameController = TextEditingController();
     showDialog(
@@ -43,39 +52,112 @@ class _MaterialsManagementScreenState extends State<MaterialsManagementScreen> {
     );
   }
 
-  void _showAddMaterialTypeDialog(String categoryName) {
-    final nameController = TextEditingController();
+  // --- FUNCIÓN PARA AÑADIR/EDITAR UN TIPO DE MATERIAL ---
+  void _showMaterialTypeDialog(
+      {DocumentSnapshot? materialType, String? categoryName}) {
+    final bool isEditing = materialType != null;
+    final formKey = GlobalKey<FormState>();
+    final nameController =
+        TextEditingController(text: isEditing ? materialType['name'] : '');
+    String? selectedCategory = isEditing ? materialType['categoryName'] : null;
+
     showDialog(
       context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(isEditing
+              ? 'Editar Tipo de Material'
+              : 'Añadir Nuevo Tipo de Material'),
+          content: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: nameController,
+                  decoration: const InputDecoration(
+                      labelText: 'Nombre del Tipo (ej. Melamina)'),
+                  validator: (v) => v!.isEmpty ? 'Requerido' : null,
+                ),
+                if (isEditing)
+                  DropdownButtonFormField<String>(
+                    initialValue: selectedCategory,
+                    hint: const Text('Seleccionar Categoría'),
+                    items: _categories.map((String category) {
+                      return DropdownMenuItem(
+                          value: category, child: Text(category));
+                    }).toList(),
+                    onChanged: (value) {
+                      selectedCategory = value;
+                    },
+                    validator: (v) => v == null ? 'Requerido' : null,
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancelar')),
+            ElevatedButton(
+              onPressed: () async {
+                if (formKey.currentState!.validate()) {
+                  final data = {
+                    'name': nameController.text,
+                    'categoryName': isEditing ? selectedCategory : categoryName,
+                  };
+                  if (isEditing) {
+                    await materialType.reference.update(data);
+                  } else {
+                    await FirebaseFirestore.instance
+                        .collection('material_types')
+                        .add(data);
+                  }
+                  if (!context.mounted) return;
+                  Navigator.of(context).pop();
+                }
+              },
+              child: const Text('Guardar'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // --- FUNCIÓN PARA ELIMINAR UN TIPO DE MATERIAL Y SUS VARIANTES ---
+  Future<void> _deleteMaterialType(DocumentSnapshot materialType) async {
+    final bool? confirm = await showDialog<bool>(
+      context: context,
       builder: (context) => AlertDialog(
-        title: Text('Añadir Material a "$categoryName"'),
-        content: TextFormField(
-          controller: nameController,
-          decoration: const InputDecoration(
-              labelText: 'Nombre del Material (ej. Melamina)'),
-        ),
+        title: Text('Eliminar "${materialType['name']}"'),
+        content: const Text(
+            '¿Estás seguro? Se eliminarán también todas sus variantes. Esta acción no se puede deshacer.'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: () => Navigator.of(context).pop(false),
               child: const Text('Cancelar')),
-          ElevatedButton(
-            onPressed: () async {
-              if (nameController.text.isNotEmpty) {
-                await FirebaseFirestore.instance
-                    .collection('material_types')
-                    .add({
-                  'name': nameController.text,
-                  'categoryName': categoryName,
-                });
-                if (!context.mounted) return;
-                Navigator.of(context).pop();
-              }
-            },
-            child: const Text('Guardar'),
-          ),
+          TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child:
+                  const Text('Eliminar', style: TextStyle(color: Colors.red))),
         ],
       ),
     );
+
+    if (confirm != true) return;
+
+    WriteBatch batch = FirebaseFirestore.instance.batch();
+
+    final variantsSnapshot =
+        await materialType.reference.collection('variants').get();
+    for (final doc in variantsSnapshot.docs) {
+      batch.delete(doc.reference);
+    }
+
+    batch.delete(materialType.reference);
+
+    await batch.commit();
   }
 
   @override
@@ -108,6 +190,12 @@ class _MaterialsManagementScreenState extends State<MaterialsManagementScreen> {
                 title: Text(categoryName,
                     style: const TextStyle(
                         fontWeight: FontWeight.bold, fontSize: 18)),
+                // --- AQUI SE AÑADE EL COLOR AZUL ---
+                backgroundColor: const Color.fromARGB(255, 11, 143, 252)
+                    .withAlpha(30), // Fondo azul claro para la cinta
+                collapsedBackgroundColor: const Color.fromARGB(255, 46, 1, 250)
+                    .withAlpha(30), // Mismo color cuando está cerrada
+                // --- FIN DEL CAMBIO DE COLOR ---
                 children: [
                   StreamBuilder<QuerySnapshot>(
                     stream: FirebaseFirestore.instance
@@ -124,8 +212,6 @@ class _MaterialsManagementScreenState extends State<MaterialsManagementScreen> {
                           ...materialSnapshot.data!.docs.map((materialType) {
                             return ListTile(
                               title: Text(materialType['name']),
-                              trailing:
-                                  const Icon(Icons.arrow_forward_ios, size: 16),
                               onTap: () {
                                 Navigator.push(
                                     context,
@@ -134,14 +220,31 @@ class _MaterialsManagementScreenState extends State<MaterialsManagementScreen> {
                                             VariantsManagementScreen(
                                                 materialType: materialType)));
                               },
+                              trailing: PopupMenuButton<String>(
+                                onSelected: (value) {
+                                  if (value == 'edit') {
+                                    _showMaterialTypeDialog(
+                                        materialType: materialType);
+                                  } else if (value == 'delete') {
+                                    _deleteMaterialType(materialType);
+                                  }
+                                },
+                                itemBuilder: (context) => [
+                                  const PopupMenuItem(
+                                      value: 'edit', child: Text('Editar')),
+                                  const PopupMenuItem(
+                                      value: 'delete', child: Text('Eliminar')),
+                                ],
+                              ),
                             );
                           }),
                           ListTile(
                             leading: const Icon(Icons.add, color: Colors.green),
                             title: const Text('Añadir nuevo material...',
                                 style: TextStyle(color: Colors.green)),
-                            onTap: () =>
-                                _showAddMaterialTypeDialog(categoryName),
+                            onTap: () => _showMaterialTypeDialog(
+                                categoryName:
+                                    categoryName), // Llama sin parámetros para crear
                           )
                         ],
                       );
