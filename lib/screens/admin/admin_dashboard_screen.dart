@@ -1,3 +1,4 @@
+import 'package:indesign_mobiliarios_app/screens/admin/catalog_node_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:indesign_mobiliarios_app/services/auth_service.dart';
 import 'package:indesign_mobiliarios_app/screens/admin/admin_requirements_screen.dart';
@@ -14,7 +15,6 @@ import 'package:indesign_mobiliarios_app/screens/admin/record_payment_screen.dar
 import 'package:indesign_mobiliarios_app/screens/admin/scraps_management_screen.dart';
 import 'package:indesign_mobiliarios_app/screens/admin/transaction_history_screen.dart';
 import 'package:indesign_mobiliarios_app/screens/admin/upcoming_installments_screen.dart';
-import 'package:indesign_mobiliarios_app/screens/admin/materials_management_screen.dart';
 
 class AdminDashboardScreen extends StatelessWidget {
   const AdminDashboardScreen({super.key});
@@ -103,7 +103,7 @@ class AdminDashboardScreen extends StatelessWidget {
       {
         'icon': Icons.sell,
         'label': 'Catálogo',
-        'screen': const MaterialsManagementScreen()
+        'screen': const CatalogNodeScreen()
       },
       {
         'icon': Icons.cut,
