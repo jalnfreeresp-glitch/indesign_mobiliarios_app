@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_speed_dial/flutter_speed_dial.dart';
 
@@ -25,6 +26,12 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
     super.initState();
     _currentParentId = widget.parentId ?? 'root';
     _currentTitle = widget.parentName ?? 'Catálogo Principal';
+  }
+
+  // Obtener UID del usuario actual
+  String? _getCurrentUserId() {
+    final user = FirebaseAuth.instance.currentUser;
+    return user?.uid;
   }
 
   // --- Eliminación en cascada ---
@@ -91,11 +98,58 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
     return breadcrumbs;
   }
 
+  // --- Construir ruta completa para nombre de producto final ---
+  Future<String> _buildFullRoute() async {
+    if (_currentParentId == 'root') return 'Catálogo Principal';
+
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('catalog_nodes')
+          .doc(_currentParentId)
+          .get();
+
+      if (!doc.exists) return '';
+
+      final data = doc.data()!;
+      final parentName = data['name'];
+      final grandParentId = data['parentId'];
+
+      final parentPath = await _buildFullRouteForId(grandParentId);
+      return parentPath.isEmpty ? parentName : '$parentPath > $parentName';
+    } catch (e) {
+      return 'Error cargando ruta';
+    }
+  }
+
+  // Recursiva para obtener ruta desde un ID
+  Future<String> _buildFullRouteForId(String? parentId) async {
+    if (parentId == null || parentId == 'root') return '';
+
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('catalog_nodes')
+          .doc(parentId)
+          .get();
+
+      if (!doc.exists) return '';
+
+      final data = doc.data()!;
+      final parentName = data['name'];
+      final grandParentId = data['parentId'];
+
+      final parentPath = await _buildFullRouteForId(grandParentId);
+      return parentPath.isEmpty ? parentName : '$parentPath > $parentName';
+    } catch (e) {
+      return 'Error cargando ruta';
+    }
+  }
+
   void _showAddNodeDialog() {
     final formKey = GlobalKey<FormState>();
     final nameController = TextEditingController();
     final priceController = TextEditingController();
     final presentationController = TextEditingController();
+    final supplierController = TextEditingController(); // ✅ Nuevo controlador
     bool isFinalProduct = false;
 
     showDialog(
@@ -169,6 +223,17 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
                           ),
                           validator: (v) => v!.isEmpty ? 'Requerido' : null,
                         ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: supplierController,
+                          decoration: InputDecoration(
+                            labelText: 'Proveedor sugerido',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            prefixIcon: const Icon(Icons.store),
+                          ),
+                        ),
                       ],
                     ],
                   ),
@@ -189,15 +254,30 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
                   ),
                   onPressed: () async {
                     if (formKey.currentState!.validate()) {
+                      String fullName = nameController.text.trim();
+
+                      // ✅ Si es producto final, construir nombre con ruta completa
+                      if (isFinalProduct) {
+                        final fullRoute = await _buildFullRoute();
+                        fullName = '$fullRoute > $fullName';
+                      }
+
                       final data = {
-                        'name': nameController.text.trim(),
+                        'name': fullName,
                         'parentId': _currentParentId,
                         'isFinalProduct': isFinalProduct,
                         if (isFinalProduct)
                           'price': double.tryParse(priceController.text) ?? 0.0,
                         if (isFinalProduct)
                           'presentation': presentationController.text.trim(),
+                        if (isFinalProduct)
+                          'suggestedSupplier':
+                              supplierController.text.trim(), // ✅ Nuevo campo
                         'createdAt': FieldValue.serverTimestamp(),
+                        'createdBy': _getCurrentUserId(), // ✅ Historial
+                        'updatedAt':
+                            FieldValue.serverTimestamp(), // ✅ Historial
+                        'updatedBy': _getCurrentUserId(), // ✅ Historial
                       };
                       await FirebaseFirestore.instance
                           .collection('catalog_nodes')
@@ -231,6 +311,8 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
         TextEditingController(text: data['price']?.toString() ?? '');
     final presentationController =
         TextEditingController(text: data['presentation'] ?? '');
+    final supplierController = TextEditingController(
+        text: data['suggestedSupplier'] ?? ''); // ✅ Nuevo controlador
     bool isFinalProduct = data['isFinalProduct'] ?? false;
 
     showDialog(
@@ -271,6 +353,11 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
                         decoration:
                             const InputDecoration(labelText: 'Presentación'),
                         validator: (v) => v!.isEmpty ? 'Requerido' : null,
+                      ),
+                      TextFormField(
+                        controller: supplierController,
+                        decoration: const InputDecoration(
+                            labelText: 'Proveedor sugerido'),
                       ),
                     ],
                   ],
@@ -337,6 +424,13 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
                         'price': double.tryParse(priceController.text) ?? 0.0,
                       if (isFinalProduct)
                         'presentation': presentationController.text.trim(),
+                      if (isFinalProduct)
+                        'suggestedSupplier': supplierController.text
+                            .trim(), // ✅ Actualizar proveedor
+                      'updatedAt': FieldValue
+                          .serverTimestamp(), // ✅ Actualizar historial
+                      'updatedBy':
+                          _getCurrentUserId(), // ✅ Actualizar historial
                     };
                     await FirebaseFirestore.instance
                         .collection('catalog_nodes')
@@ -560,14 +654,149 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
 }
 
 // --- Pantalla de Materiales Finales ---
-class FinalMaterialsScreen extends StatelessWidget {
+class FinalMaterialsScreen extends StatefulWidget {
   const FinalMaterialsScreen({super.key});
+
+  @override
+  State<FinalMaterialsScreen> createState() => _FinalMaterialsScreenState();
+}
+
+class _FinalMaterialsScreenState extends State<FinalMaterialsScreen> {
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _onSearchChanged(String query) {
+    setState(() {
+      _searchQuery = query.toLowerCase();
+    });
+  }
+
+  void _showEditDialog(BuildContext context, DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+    final nameController = TextEditingController(text: data['name']);
+    final priceController =
+        TextEditingController(text: data['price'].toString());
+    final presentationController =
+        TextEditingController(text: data['presentation']);
+    final supplierController =
+        TextEditingController(text: data['suggestedSupplier'] ?? '');
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Editar Material'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: nameController,
+                decoration: const InputDecoration(labelText: 'Nombre'),
+              ),
+              TextFormField(
+                controller: priceController,
+                decoration: const InputDecoration(labelText: 'Precio (USD)'),
+                keyboardType: TextInputType.number,
+              ),
+              TextFormField(
+                controller: presentationController,
+                decoration: const InputDecoration(labelText: 'Presentación'),
+              ),
+              TextFormField(
+                controller: supplierController,
+                decoration:
+                    const InputDecoration(labelText: 'Proveedor sugerido'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final updatedData = {
+                  'name': nameController.text.trim(),
+                  'price': double.tryParse(priceController.text) ?? 0.0,
+                  'presentation': presentationController.text.trim(),
+                  'suggestedSupplier': supplierController.text.trim(),
+                  'updatedAt': FieldValue.serverTimestamp(),
+                  'updatedBy': FirebaseAuth.instance.currentUser?.uid,
+                };
+                await FirebaseFirestore.instance
+                    .collection('catalog_nodes')
+                    .doc(doc.id)
+                    .update(updatedData);
+                if (!context.mounted) return;
+                Navigator.of(context).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Material actualizado')),
+                );
+              },
+              child: const Text('Guardar'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showDeleteDialog(BuildContext context, DocumentSnapshot doc) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Confirmar Eliminación'),
+          content: const Text(
+              '¿Estás seguro de que quieres eliminar este material?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancelar'),
+            ),
+            TextButton(
+              onPressed: () async {
+                await FirebaseFirestore.instance
+                    .collection('catalog_nodes')
+                    .doc(doc.id)
+                    .delete();
+                if (!context.mounted) return;
+                Navigator.of(context).pop();
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Material eliminado')),
+                );
+              },
+              child:
+                  const Text('Eliminar', style: TextStyle(color: Colors.red)),
+            ),
+          ],
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Todos los Materiales'),
+        title: TextField(
+          controller: _searchController,
+          decoration: const InputDecoration(
+            hintText: 'Buscar material...',
+            border: InputBorder.none,
+            hintStyle: TextStyle(color: Colors.white70),
+          ),
+          style: const TextStyle(color: Colors.white),
+          onChanged: _onSearchChanged,
+        ),
         backgroundColor: Colors.orange,
       ),
       body: StreamBuilder<QuerySnapshot>(
@@ -585,43 +814,120 @@ class FinalMaterialsScreen extends StatelessWidget {
             );
           }
 
+          final allMaterials = snapshot.data!.docs;
+          final filteredMaterials = _searchQuery.isEmpty
+              ? allMaterials
+              : allMaterials.where((doc) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  final name = (data['name'] as String?)?.toLowerCase() ?? '';
+                  final presentation =
+                      (data['presentation'] as String?)?.toLowerCase() ?? '';
+                  return name.contains(_searchQuery) ||
+                      presentation.contains(_searchQuery);
+                }).toList();
+
           return ListView.builder(
-            itemCount: snapshot.data!.docs.length,
+            itemCount: filteredMaterials.length,
             itemBuilder: (context, index) {
-              final doc = snapshot.data!.docs[index];
+              final doc = filteredMaterials[index];
               final data = doc.data() as Map<String, dynamic>;
               final name = data['name'] ?? 'Sin nombre';
               final price = (data['price'] as num?)?.toDouble() ?? 0.0;
               final presentation = data['presentation'] ?? '';
+              final supplier = data['suggestedSupplier'] ?? '';
 
               return Card(
                 margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: ListTile(
-                  leading: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.green[100],
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(Icons.shopping_cart, color: Colors.green),
+                elevation: 2,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Nombre del material
+                      Text(
+                        name,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.orange,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      // Presentación
+                      Text(
+                        presentation,
+                        style:
+                            const TextStyle(fontSize: 14, color: Colors.grey),
+                      ),
+                      const SizedBox(height: 8),
+                      // Precio
+                      Row(
+                        children: [
+                          Text(
+                            '\$${price.toStringAsFixed(2)}',
+                            style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.green,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Icon(Icons.shopping_cart, color: Colors.green[700]),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      // Proveedor sugerido
+                      if (supplier.isNotEmpty)
+                        Text(
+                          '🏪 Proveedor: $supplier',
+                          style: const TextStyle(
+                              fontSize: 12, color: Colors.blueGrey),
+                        ),
+                      const SizedBox(height: 8),
+                      // Historial de cambios
+                      if (data['updatedBy'] != null ||
+                          data['updatedAt'] != null) ...[
+                        const Divider(),
+                        const Text(
+                          '📝 Última modificación:',
+                          style: TextStyle(
+                              fontSize: 12, fontWeight: FontWeight.bold),
+                        ),
+                        if (data['updatedBy'] != null)
+                          Text(
+                            'Por: ${data['updatedBy']}',
+                            style: const TextStyle(
+                                fontSize: 12, color: Colors.grey),
+                          ),
+                        if (data['updatedAt'] != null)
+                          Text(
+                            'Fecha: ${_formatTimestamp(data['updatedAt'])}',
+                            style: const TextStyle(
+                                fontSize: 12, color: Colors.grey),
+                          ),
+                      ],
+                      const SizedBox(height: 12),
+                      // Botones de acción
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.edit, color: Colors.blue),
+                            onPressed: () => _showEditDialog(context, doc),
+                            tooltip: 'Editar',
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.red),
+                            onPressed: () => _showDeleteDialog(context, doc),
+                            tooltip: 'Eliminar',
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
-                  title: Text(name),
-                  subtitle: Text(presentation),
-                  trailing: Text(
-                    '\$${price.toStringAsFixed(2)}',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                      color: Colors.green[800],
-                    ),
-                  ),
-                  onTap: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                          content: Text(
-                              'Material: $name - \$${price.toStringAsFixed(2)}')),
-                    );
-                  },
                 ),
               );
             },
@@ -629,5 +935,21 @@ class FinalMaterialsScreen extends StatelessWidget {
         },
       ),
     );
+  }
+
+  // Formatear fecha
+  String _formatTimestamp(dynamic timestamp) {
+    if (timestamp == null) return 'Fecha no disponible';
+
+    DateTime date;
+    if (timestamp is Timestamp) {
+      date = timestamp.toDate();
+    } else if (timestamp is DateTime) {
+      date = timestamp;
+    } else {
+      return 'Formato de fecha inválido';
+    }
+
+    return '${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
   }
 }
