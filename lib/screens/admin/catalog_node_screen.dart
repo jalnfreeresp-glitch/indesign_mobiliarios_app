@@ -3,8 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_speed_dial/flutter_speed_dial.dart';
-// Asegúrate de que final_materials_screen.dart exista y tenga la clase FinalMaterialsScreen
-import 'final_materials_screen.dart'; // Importa la pantalla de materiales finales
+import 'final_materials_screen.dart';
 
 class CatalogNodeScreen extends StatefulWidget {
   final String? parentId;
@@ -31,43 +30,34 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
     _currentTitle = widget.parentName ?? 'Catálogo Principal';
   }
 
-  // Obtener UID del usuario actual
   String? _getCurrentUserId() {
     final user = FirebaseAuth.instance.currentUser;
     return user?.uid;
   }
 
-  // --- Eliminación en cascada ---
   Future<void> _deleteNodeAndDescendants(String nodeId) async {
-    // Primero, obtener todos los descendientes directos
     final childrenSnapshot = await FirebaseFirestore.instance
         .collection('catalog_nodes')
         .where('parentId', isEqualTo: nodeId)
         .get();
-    // Recursivamente eliminar cada hijo y sus descendientes
     for (var child in childrenSnapshot.docs) {
       await _deleteNodeAndDescendants(child.id);
     }
-    // Finalmente, eliminar el nodo actual
     await FirebaseFirestore.instance
         .collection('catalog_nodes')
         .doc(nodeId)
         .delete();
   }
 
-  // --- Construir ruta de navegación ---
   Future<List<Map<String, String>>> _buildBreadcrumbs() async {
     final breadcrumbs = <Map<String, String>>[];
     var currentId = _currentParentId;
     var currentName = _currentTitle;
-    // Si estamos en la raíz, no hay ruta que construir
-    if (currentId == 'root') {
-      return breadcrumbs;
-    }
-    // Construir ruta hacia atrás hasta llegar a 'root'
+
+    if (currentId == 'root') return breadcrumbs;
+
     while (currentId != 'root') {
       breadcrumbs.insert(0, {'id': currentId, 'name': currentName});
-      // Obtener el padre del nodo actual
       final nodeSnapshot = await FirebaseFirestore.instance
           .collection('catalog_nodes')
           .doc(currentId)
@@ -75,11 +65,7 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
       if (!nodeSnapshot.exists) break;
       final data = nodeSnapshot.data()!;
       currentId = data['parentId'];
-      // Si el padre es 'root', terminamos
-      if (currentId == 'root') {
-        break;
-      }
-      // Obtener el nombre del padre
+      if (currentId == 'root') break;
       final parentSnapshot = await FirebaseFirestore.instance
           .collection('catalog_nodes')
           .doc(currentId)
@@ -90,7 +76,6 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
     return breadcrumbs;
   }
 
-  // --- Construir ruta completa para nombre de producto final ---
   Future<String> _buildFullRoute() async {
     if (_currentParentId == 'root') return 'Catálogo Principal';
     try {
@@ -105,13 +90,10 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
       final parentPath = await _buildFullRouteForId(grandParentId);
       return parentPath.isEmpty ? parentName : '$parentPath > $parentName';
     } catch (e) {
-      // En producción, considera usar un logger en lugar de print o simplemente manejar el error silenciosamente.
-      // print('Error en _buildFullRoute: $e');
       return 'Error cargando ruta';
     }
   }
 
-  // Recursiva para obtener ruta desde un ID
   Future<String> _buildFullRouteForId(String? parentId) async {
     if (parentId == null || parentId == 'root') return '';
     try {
@@ -126,8 +108,6 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
       final parentPath = await _buildFullRouteForId(grandParentId);
       return parentPath.isEmpty ? parentName : '$parentPath > $parentName';
     } catch (e) {
-      // En producción, considera usar un logger en lugar de print o simplemente manejar el error silenciosamente.
-      // print('Error en _buildFullRouteForId: $e');
       return 'Error cargando ruta';
     }
   }
@@ -137,7 +117,7 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
     final nameController = TextEditingController();
     final priceController = TextEditingController();
     final presentationController = TextEditingController();
-    final supplierController = TextEditingController(); // ✅ Nuevo controlador
+    final supplierController = TextEditingController();
     bool isFinalProduct = false;
 
     showDialog(
@@ -152,14 +132,14 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
                 child: SingleChildScrollView(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
+                    // Dentro del Column del AlertDialog
                     children: [
                       TextFormField(
                         controller: nameController,
                         decoration: InputDecoration(
                           labelText: 'Nombre',
                           border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
+                              borderRadius: BorderRadius.circular(12)),
                           prefixIcon: const Icon(Icons.label),
                         ),
                         validator: (v) => v!.isEmpty ? 'Requerido' : null,
@@ -176,9 +156,10 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
                         controlAffinity: ListTileControlAffinity.leading,
                         contentPadding: EdgeInsets.zero,
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
+                            borderRadius: BorderRadius.circular(12)),
                       ),
+
+                      // ✅ Bloque corregido: if + ...[] bien formateado
                       if (isFinalProduct) ...[
                         const SizedBox(height: 16),
                         TextFormField(
@@ -186,8 +167,7 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
                           decoration: InputDecoration(
                             labelText: 'Precio (USD)',
                             border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
+                                borderRadius: BorderRadius.circular(12)),
                             prefixIcon: const Icon(Icons.attach_money),
                           ),
                           keyboardType: TextInputType.number,
@@ -205,8 +185,7 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
                           decoration: InputDecoration(
                             labelText: 'Presentación (ej. lámina)',
                             border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
+                                borderRadius: BorderRadius.circular(12)),
                             prefixIcon: const Icon(Icons.description),
                           ),
                           validator: (v) => v!.isEmpty ? 'Requerido' : null,
@@ -217,8 +196,7 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
                           decoration: InputDecoration(
                             labelText: 'Proveedor sugerido',
                             border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
+                                borderRadius: BorderRadius.circular(12)),
                             prefixIcon: const Icon(Icons.store),
                           ),
                         ),
@@ -237,13 +215,11 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
                     backgroundColor: Colors.green,
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
+                        borderRadius: BorderRadius.circular(12)),
                   ),
                   onPressed: () async {
                     if (formKey.currentState!.validate()) {
                       String fullName = nameController.text.trim();
-                      // ✅ Si es producto final, construir nombre con ruta completa
                       if (isFinalProduct) {
                         final fullRoute = await _buildFullRoute();
                         fullName = '$fullRoute > $fullName';
@@ -257,26 +233,24 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
                         if (isFinalProduct)
                           'presentation': presentationController.text.trim(),
                         if (isFinalProduct)
-                          'suggestedSupplier':
-                              supplierController.text.trim(), // ✅ Nuevo campo
+                          'suggestedSupplier': supplierController.text.trim(),
                         'createdAt': FieldValue.serverTimestamp(),
-                        'createdBy': _getCurrentUserId(), // ✅ Historial
-                        'updatedAt':
-                            FieldValue.serverTimestamp(), // ✅ Historial
-                        'updatedBy': _getCurrentUserId(), // ✅ Historial
+                        'createdBy': _getCurrentUserId(),
+                        'updatedAt': FieldValue.serverTimestamp(),
+                        'updatedBy': _getCurrentUserId(),
                       };
                       await FirebaseFirestore.instance
                           .collection('catalog_nodes')
                           .add(data);
+
                       if (!context.mounted) return;
                       Navigator.of(context).pop();
+
                       if (!context.mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Elemento creado con éxito'),
-                          backgroundColor: Colors.green,
-                        ),
-                      );
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text('Elemento creado con éxito'),
+                        backgroundColor: Colors.green,
+                      ));
                     }
                   },
                   child: const Text('Guardar'),
@@ -291,14 +265,11 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
 
   void _showEditDeleteDialog(DocumentSnapshot node) {
     final data = node.data() as Map<String, dynamic>;
-    // Extraer el nombre base si es un producto final (eliminando la ruta)
     String displayName = data['name'];
     if (data['isFinalProduct'] == true) {
-      // Asumiendo que el nombre tiene el formato "Ruta > Nombre Base"
       final parts = displayName.split(' > ');
       if (parts.length > 1) {
-        displayName =
-            parts.last; // Mostrar solo el nombre base en el campo de edición
+        displayName = parts.last;
       }
     }
     final nameController = TextEditingController(text: displayName);
@@ -306,8 +277,8 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
         TextEditingController(text: data['price']?.toString() ?? '');
     final presentationController =
         TextEditingController(text: data['presentation'] ?? '');
-    final supplierController = TextEditingController(
-        text: data['suggestedSupplier'] ?? ''); // ✅ Nuevo controlador
+    final supplierController =
+        TextEditingController(text: data['suggestedSupplier'] ?? '');
     bool isFinalProduct = data['isFinalProduct'] ?? false;
 
     showDialog(
@@ -322,10 +293,8 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     TextFormField(
-                      controller: nameController,
-                      decoration: const InputDecoration(labelText: 'Nombre'),
-                      validator: (v) => v!.isEmpty ? 'Requerido' : null,
-                    ),
+                        controller: nameController,
+                        decoration: const InputDecoration(labelText: 'Nombre')),
                     CheckboxListTile(
                       title: const Text('Es un producto final (con precio)'),
                       value: isFinalProduct,
@@ -337,72 +306,58 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
                     ),
                     if (isFinalProduct) ...[
                       TextFormField(
-                        controller: priceController,
-                        decoration:
-                            const InputDecoration(labelText: 'Precio (USD)'),
-                        keyboardType: TextInputType.number,
-                        validator: (v) => v!.isEmpty ? 'Requerido' : null,
-                      ),
+                          controller: priceController,
+                          decoration:
+                              const InputDecoration(labelText: 'Precio (USD)')),
                       TextFormField(
-                        controller: presentationController,
-                        decoration:
-                            const InputDecoration(labelText: 'Presentación'),
-                        validator: (v) => v!.isEmpty ? 'Requerido' : null,
-                      ),
+                          controller: presentationController,
+                          decoration:
+                              const InputDecoration(labelText: 'Presentación')),
                       TextFormField(
-                        controller: supplierController,
-                        decoration: const InputDecoration(
-                            labelText: 'Proveedor sugerido'),
-                      ),
+                          controller: supplierController,
+                          decoration: const InputDecoration(
+                              labelText: 'Proveedor sugerido')),
                     ],
                   ],
                 ),
               ),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Cancelar'),
-                ),
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Cancelar')),
                 TextButton(
                   onPressed: () async {
                     final confirmation = await showDialog<bool>(
                       context: context,
-                      builder: (context) {
-                        return AlertDialog(
-                          title: const Text('Confirmar Eliminación'),
-                          content: const Text(
-                              '¿Estás seguro? Se eliminarán este elemento y todos sus descendientes.'),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.of(context).pop(false),
-                              child: const Text('Cancelar'),
-                            ),
-                            TextButton(
-                              onPressed: () => Navigator.of(context).pop(true),
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('Confirmar Eliminación'),
+                        content: const Text(
+                            '¿Estás seguro? Se eliminarán este elemento y todos sus descendientes.'),
+                        actions: [
+                          TextButton(
+                              onPressed: () => Navigator.of(ctx).pop(false),
+                              child: const Text('Cancelar')),
+                          TextButton(
+                              onPressed: () => Navigator.of(ctx).pop(true),
                               child: const Text('Eliminar',
-                                  style: TextStyle(color: Colors.red)),
-                            ),
-                          ],
-                        );
-                      },
+                                  style: TextStyle(color: Colors.red))),
+                        ],
+                      ),
                     );
                     if (confirmation == true) {
                       try {
                         await _deleteNodeAndDescendants(node.id);
                         if (!context.mounted) return;
                         Navigator.of(context).pop();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content:
-                                Text('Elemento y descendientes eliminados'),
-                            backgroundColor: Colors.red,
-                          ),
-                        );
+                        ScaffoldMessenger.of(context)
+                            .showSnackBar(const SnackBar(
+                          content: Text('Eliminado'),
+                          backgroundColor: Colors.red,
+                        ));
                       } catch (e) {
                         if (!context.mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Error: $e')),
-                        );
+                        ScaffoldMessenger.of(context)
+                            .showSnackBar(SnackBar(content: Text('Error: $e')));
                       }
                     }
                   },
@@ -411,41 +366,36 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
                 ),
                 ElevatedButton(
                   onPressed: () async {
-                    // Construir el nombre completo si es un producto final
                     String fullName = nameController.text.trim();
                     if (isFinalProduct) {
                       final fullRoute = await _buildFullRoute();
                       fullName = '$fullRoute > $fullName';
                     }
                     final updatedData = {
-                      'name': fullName, // Usar el nombre completo
+                      'name': fullName,
                       'isFinalProduct': isFinalProduct,
                       if (isFinalProduct)
                         'price': double.tryParse(priceController.text) ?? 0.0,
                       if (isFinalProduct)
                         'presentation': presentationController.text.trim(),
                       if (isFinalProduct)
-                        'suggestedSupplier': supplierController.text
-                            .trim(), // ✅ Actualizar proveedor
-                      'updatedAt': FieldValue
-                          .serverTimestamp(), // ✅ Actualizar historial
-                      'updatedBy':
-                          _getCurrentUserId(), // ✅ Actualizar historial
+                        'suggestedSupplier': supplierController.text.trim(),
+                      'updatedAt': FieldValue.serverTimestamp(),
+                      'updatedBy': _getCurrentUserId(),
                     };
                     await FirebaseFirestore.instance
                         .collection('catalog_nodes')
                         .doc(node.id)
                         .update(updatedData);
-                    if (!context.mounted) {
-                      return;
-                    }
+
+                    if (!context.mounted) return;
                     Navigator.of(context).pop();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Elemento actualizado'),
-                        backgroundColor: Colors.blue,
-                      ),
-                    );
+
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                      content: Text('Actualizado'),
+                      backgroundColor: Colors.blue,
+                    ));
                   },
                   child: const Text('Actualizar'),
                 ),
@@ -479,7 +429,7 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
                   [
                     'Catálogo Principal',
                     ...snapshot.data!.map((e) => e['name']!),
-                    _currentTitle,
+                    _currentTitle
                   ].join(' > '),
                   style: const TextStyle(
                       fontSize: 14, fontWeight: FontWeight.bold),
@@ -494,11 +444,10 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
         leading: _currentParentId != 'root'
             ? IconButton(
                 icon: const Icon(Icons.arrow_back),
-                onPressed: () => Navigator.of(context).pop(),
-              )
+                onPressed: () => Navigator.of(context).pop())
             : null,
       ),
-      body: StreamBuilder<QuerySnapshot>(
+      body: StreamBuilder<QuerySnapshot<Object?>>(
         stream: FirebaseFirestore.instance
             .collection('catalog_nodes')
             .where('parentId', isEqualTo: _currentParentId)
@@ -506,10 +455,8 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(
-              child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(Colors.orange),
-              ),
-            );
+                child: CircularProgressIndicator(
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.orange)));
           }
           if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
             return const Center(
@@ -518,10 +465,9 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
                 children: [
                   Icon(Icons.folder_open, size: 80, color: Colors.grey),
                   SizedBox(height: 16),
-                  Text(
-                    'Esta categoría está vacía',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
+                  Text('Esta categoría está vacía',
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                   SizedBox(height: 8),
                   Text('Añade tu primer elemento usando el botón "+"'),
                 ],
@@ -539,8 +485,7 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
                 margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
                 elevation: 2,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
+                    borderRadius: BorderRadius.circular(12)),
                 child: InkWell(
                   borderRadius: BorderRadius.circular(12),
                   onTap: () {
@@ -548,11 +493,8 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => CatalogNodeScreen(
-                            parentId: node.id,
-                            parentName: data['name'],
-                          ),
-                        ),
+                            builder: (_) => CatalogNodeScreen(
+                                parentId: node.id, parentName: data['name'])),
                       );
                     }
                   },
@@ -566,9 +508,8 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
                           Container(
                             padding: const EdgeInsets.all(8),
                             decoration: BoxDecoration(
-                              color: Colors.green[100],
-                              shape: BoxShape.circle,
-                            ),
+                                color: Colors.green[100],
+                                shape: BoxShape.circle),
                             child: const Icon(Icons.shopping_cart,
                                 color: Colors.green, size: 20),
                           )
@@ -576,9 +517,8 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
                           Container(
                             padding: const EdgeInsets.all(8),
                             decoration: BoxDecoration(
-                              color: Colors.blue[100],
-                              shape: BoxShape.circle,
-                            ),
+                                color: Colors.blue[100],
+                                shape: BoxShape.circle),
                             child: const Icon(Icons.folder,
                                 color: Colors.blue, size: 20),
                           ),
@@ -602,9 +542,7 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
                                 Text(
                                   '\$${(data['price'] as num? ?? 0).toStringAsFixed(2)} - ${data['presentation'] ?? ''}',
                                   style: const TextStyle(
-                                    fontSize: 14,
-                                    color: Colors.grey,
-                                  ),
+                                      fontSize: 14, color: Colors.grey),
                                 ),
                             ],
                           ),
@@ -621,27 +559,23 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
           );
         },
       ),
-      // ✅ Speed Dial con dos acciones
       floatingActionButton: SpeedDial(
         icon: Icons.menu,
         activeIcon: Icons.close,
         backgroundColor: Colors.orange,
         children: [
           SpeedDialChild(
-            child: const Icon(Icons.add),
-            label: 'Añadir Elemento',
-            onTap: _showAddNodeDialog,
-          ),
+              child: const Icon(Icons.add),
+              label: 'Añadir Elemento',
+              onTap: _showAddNodeDialog),
           SpeedDialChild(
             child: const Icon(Icons.inventory_2),
             label: 'Ver Materiales',
             onTap: () {
               Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const FinalMaterialsScreen(),
-                ),
-              );
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const FinalMaterialsScreen()));
             },
           ),
         ],
@@ -650,8 +584,3 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
     );
   }
 }
-
-// NOTA: La clase FinalMaterialsScreen ha sido eliminada de este archivo.
-// Ahora reside en su propio archivo: final_materials_screen.dart
-// Asegúrate de que ese archivo contenga la implementación actualizada
-// con el FutureBuilder para mostrar el nombre del usuario en el historial.
