@@ -2,8 +2,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
-
-
 import 'package:indesign_mobiliarios_app/constants.dart';
 
 class UserModel {
@@ -40,11 +38,8 @@ class UserProvider with ChangeNotifier {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   Stream<List<UserModel>> get users {
-    return _firestore
-        .collection(usersCollection)
-        .snapshots()
-        .map((snapshot) =>
-            snapshot.docs.map((doc) => UserModel.fromFirestore(doc)).toList());
+    return _firestore.collection(usersCollection).snapshots().map((snapshot) =>
+        snapshot.docs.map((doc) => UserModel.fromFirestore(doc)).toList());
   }
 
   Future<void> fetchUser(String uid) async {
@@ -66,4 +61,3 @@ class UserProvider with ChangeNotifier {
     notifyListeners();
   }
 }
-
