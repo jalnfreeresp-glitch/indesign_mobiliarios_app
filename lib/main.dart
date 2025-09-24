@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'providers/catalog_provider.dart'; // Asegúrate de tener este provider
-import 'screens/admin/create_project_screen.dart'; // Tu pantalla principal
+import 'screens/admin/admin_dashboard_screen.dart'; // Tu pantalla principal
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized(); // ✅ Obligatorio para Firebase
@@ -28,7 +28,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'InDesign Mobiliarios',
       theme: ThemeData(primarySwatch: Colors.orange),
-      home: const CreateProjectScreen(), // O tu pantalla inicial
+      home: const AdminDashboardScreen(), // O tu pantalla inicial
     );
   }
 }

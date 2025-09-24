@@ -1,7 +1,7 @@
 // lib/components/hierarchical_material_selector.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:cloud_firestore/cloud_firestore.dart'; // ✅ Importar Firestore
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../providers/catalog_provider.dart';
 
 class HierarchicalMaterialSelector extends StatefulWidget {
@@ -24,7 +24,8 @@ class HierarchicalMaterialSelector extends StatefulWidget {
 class _HierarchicalMaterialSelectorState
     extends State<HierarchicalMaterialSelector> {
   late String _currentParentId;
-  DocumentSnapshot<Object?>? _selectedNodeSnapshot; // ✅ Tipo correcto
+  String? _selectedNodeId; // ✅ Solo el ID del nodo seleccionado
+  DocumentSnapshot<Object?>? _selectedNodeSnapshot;
   bool isFinalProduct = false;
 
   final TextEditingController _quantityController =
@@ -37,15 +38,57 @@ class _HierarchicalMaterialSelectorState
     _loadNodes();
   }
 
+  @override
+  void dispose() {
+    _quantityController.dispose();
+    super.dispose();
+  }
+
   void _loadNodes() {
     final provider = context.read<CatalogProvider>();
     provider.loadNodes(_currentParentId);
   }
 
+  Future<String> _buildFullRoute() async {
+    if (_currentParentId == 'root') return 'Catálogo Principal';
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('catalog_nodes')
+          .doc(_currentParentId)
+          .get();
+      if (!doc.exists) return '';
+      final data = doc.data()!;
+      final parentName = data['name'];
+      final grandParentId = data['parentId'];
+      final parentPath = await _buildFullRouteForId(grandParentId);
+      return parentPath.isEmpty ? parentName : '$parentPath > $parentName';
+    } catch (e) {
+      return 'Error cargando ruta';
+    }
+  }
+
+  Future<String> _buildFullRouteForId(String? parentId) async {
+    if (parentId == null || parentId == 'root') return '';
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('catalog_nodes')
+          .doc(parentId)
+          .get();
+      if (!doc.exists) return '';
+      final data = doc.data()!;
+      final parentName = data['name'];
+      final grandParentId = data['parentId'];
+      final parentPath = await _buildFullRouteForId(grandParentId);
+      return parentPath.isEmpty ? parentName : '$parentPath > $parentName';
+    } catch (e) {
+      return 'Error cargando ruta';
+    }
+  }
+
   void _showCreateDialog() {
     final formKey = GlobalKey<FormState>();
     final nameController = TextEditingController();
-    bool isFinal = false; // ✅ Definido aquí
+    bool isFinal = false;
 
     showDialog(
       context: context,
@@ -54,43 +97,47 @@ class _HierarchicalMaterialSelectorState
           title: const Text('Añadir Nuevo Elemento'),
           content: Form(
             key: formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextFormField(
-                  controller: nameController,
-                  decoration: const InputDecoration(labelText: 'Nombre'),
-                  validator: (v) => (v?.isEmpty ?? true) ? 'Requerido' : null,
-                ),
-                CheckboxListTile(
-                  title: const Text('Es producto final'),
-                  value: isFinal,
-                  onChanged: (v) => setState(() => isFinal = v ?? false),
-                ),
-                if (isFinal)
-                  Column(
-                    children: [
-                      TextFormField(
-                        decoration: const InputDecoration(labelText: 'Precio'),
-                        keyboardType: TextInputType.number,
-                      ),
-                      TextFormField(
-                        decoration:
-                            const InputDecoration(labelText: 'Presentación'),
-                      ),
-                      TextFormField(
-                        decoration:
-                            const InputDecoration(labelText: 'Proveedor'),
-                      ),
-                    ],
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextFormField(
+                    controller: nameController,
+                    decoration: const InputDecoration(labelText: 'Nombre'),
+                    validator: (v) => (v?.isEmpty ?? true) ? 'Requerido' : null,
                   ),
-              ],
+                  CheckboxListTile(
+                    title: const Text('Es un producto final (con precio)'),
+                    value: isFinal,
+                    onChanged: (v) => setState(() => isFinal = v ?? false),
+                  ),
+                  if (isFinal)
+                    Column(
+                      children: [
+                        TextFormField(
+                          decoration:
+                              const InputDecoration(labelText: 'Precio'),
+                          keyboardType: TextInputType.number,
+                        ),
+                        TextFormField(
+                          decoration:
+                              const InputDecoration(labelText: 'Presentación'),
+                        ),
+                        TextFormField(
+                          decoration:
+                              const InputDecoration(labelText: 'Proveedor'),
+                        ),
+                      ],
+                    ),
+                ],
+              ),
             ),
           ),
           actions: [
             TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cancelar')),
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancelar'),
+            ),
             ElevatedButton(
               onPressed: () async {
                 if (formKey.currentState!.validate()) {
@@ -98,15 +145,14 @@ class _HierarchicalMaterialSelectorState
                   String fullName = nameController.text.trim();
 
                   if (isFinal) {
-                    final fullRoute =
-                        await provider.buildFullRoute(_currentParentId);
+                    final fullRoute = await _buildFullRoute();
                     fullName = '$fullRoute > $fullName';
                   }
 
                   final newId = await provider.createNode(
                     name: fullName,
                     parentId: _currentParentId,
-                    isFinalProduct: isFinal, // ✅ Parámetro corregido
+                    isFinalProduct: isFinal,
                     price: 0.0,
                     presentation: '',
                     supplier: '',
@@ -117,6 +163,7 @@ class _HierarchicalMaterialSelectorState
                     Navigator.of(context).pop();
                     setState(() {
                       _currentParentId = newId;
+                      _selectedNodeId = null;
                       _selectedNodeSnapshot = null;
                       isFinalProduct = isFinal;
                     });
@@ -139,8 +186,9 @@ class _HierarchicalMaterialSelectorState
 
     return AlertDialog(
       title: const Text('Seleccionar Material'),
+      // ✅ Recomendación adicional: Limitar el ancho total del diálogo
       content: SizedBox(
-        width: MediaQuery.of(context).size.width * 0.8,
+        width: 400, // Ancho máximo razonable
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -149,14 +197,15 @@ class _HierarchicalMaterialSelectorState
               // Ruta completa
               if (_currentParentId != 'root')
                 FutureBuilder<String>(
-                  future: provider.buildFullRoute(_currentParentId),
+                  future: _buildFullRoute(),
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
                       return const Text('Cargando ruta...');
                     }
-                    return Text('📍 ${snapshot.data ?? 'Ubicación'}',
-                        style:
-                            const TextStyle(fontSize: 14, color: Colors.grey));
+                    return Text(
+                      '📍 ${snapshot.data ?? 'Ubicación'}',
+                      style: const TextStyle(fontSize: 14, color: Colors.grey),
+                    );
                   },
                 ),
 
@@ -168,41 +217,65 @@ class _HierarchicalMaterialSelectorState
               else
                 Column(
                   children: [
-                    DropdownButtonFormField<DocumentSnapshot<Object?>>(
-                      hint: const Text('Selecciona un elemento'),
-                      items: nodes.map((doc) {
-                        final data = doc.data()
-                            as Map<String, dynamic>; // ✅ Cast explícito
-                        final isFinal = data['isFinalProduct'] ?? false;
-                        return DropdownMenuItem(
-                          value: doc,
-                          child: Row(
-                            children: [
-                              Icon(isFinal ? Icons.shopping_cart : Icons.folder,
+                    // ✅ Contenedor con ancho fijo para el dropdown
+                    SizedBox(
+                      width: 350, // Menor que el ancho del diálogo
+                      child: DropdownButtonFormField<String?>(
+                        initialValue: _selectedNodeId,
+                        hint: const Text('Selecciona un elemento'),
+                        isExpanded:
+                            true, // Permite que el menú use todo el ancho
+                        items: nodes.map((doc) {
+                          final data = doc.data() as Map<String, dynamic>;
+                          final isFinal = data['isFinalProduct'] ?? false;
+                          return DropdownMenuItem<String>(
+                            value: doc.id,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  isFinal ? Icons.shopping_cart : Icons.folder,
                                   size: 18,
-                                  color: isFinal ? Colors.green : Colors.blue),
-                              const SizedBox(width: 8),
-                              Text(data['name']),
-                            ],
-                          ),
-                        );
-                      }).toList(),
-                      onChanged: (doc) {
-                        final data = doc!.data() as Map<String, dynamic>;
-                        if (data['isFinalProduct'] == true) {
-                          setState(() {
-                            _selectedNodeSnapshot = doc;
-                            isFinalProduct = true;
-                          });
-                        } else {
-                          setState(() {
-                            _currentParentId = doc.id;
-                            _selectedNodeSnapshot = null;
-                            isFinalProduct = false;
-                          });
-                          _loadNodes();
-                        }
-                      },
+                                  color: isFinal ? Colors.green : Colors.blue,
+                                ),
+                                const SizedBox(width: 8),
+                                // ✅ Flexible para manejar nombres largos
+                                Flexible(
+                                  fit: FlexFit.loose,
+                                  child: Text(
+                                    data['name'],
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontSize: 14),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                        onChanged: (String? id) async {
+                          if (id == null) return;
+                          final doc = await FirebaseFirestore.instance
+                              .collection('catalog_nodes')
+                              .doc(id)
+                              .get();
+                          final data = doc.data() as Map<String, dynamic>;
+                          if (data['isFinalProduct'] == true) {
+                            setState(() {
+                              _selectedNodeId = id;
+                              _selectedNodeSnapshot = doc;
+                              isFinalProduct = true;
+                            });
+                          } else {
+                            setState(() {
+                              _currentParentId = id;
+                              _selectedNodeId = null;
+                              _selectedNodeSnapshot = null;
+                              isFinalProduct = false;
+                            });
+                            _loadNodes();
+                          }
+                        },
+                      ),
                     ),
 
                     const SizedBox(height: 16),
@@ -220,8 +293,10 @@ class _HierarchicalMaterialSelectorState
                           ),
                           TextFormField(
                             controller: _quantityController,
-                            decoration:
-                                const InputDecoration(labelText: 'Cantidad'),
+                            decoration: const InputDecoration(
+                              labelText: 'Cantidad',
+                              border: OutlineInputBorder(),
+                            ),
                             keyboardType: TextInputType.number,
                           ),
                         ],
@@ -241,8 +316,9 @@ class _HierarchicalMaterialSelectorState
       ),
       actions: [
         TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancelar')),
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
         ElevatedButton(
           onPressed: () {
             if (isFinalProduct && _selectedNodeSnapshot != null) {
