@@ -1,5 +1,6 @@
-import 'package:cloud_firestore/cloud_firestore.dart'; // <- CORREGIDO
 import 'package:flutter/material.dart';
+import 'package:indesign_mobiliarios_app/providers/project_provider.dart';
+import 'package:provider/provider.dart';
 
 class ArchivedProjectsScreen extends StatefulWidget {
   const ArchivedProjectsScreen({super.key});
@@ -28,10 +29,9 @@ class _ArchivedProjectsScreenState extends State<ArchivedProjectsScreen> {
     );
 
     if (confirm == true) {
-      await FirebaseFirestore.instance
-          .collection('projects')
-          .doc(projectId)
-          .update({'isArchived': false});
+      if (!mounted) return;
+      await Provider.of<ProjectProvider>(context, listen: false)
+          .unarchiveProject(projectId);
     }
   }
 
@@ -42,48 +42,41 @@ class _ArchivedProjectsScreenState extends State<ArchivedProjectsScreen> {
         title: const Text('Proyectos Archivados'),
         backgroundColor: Colors.orange,
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('projects')
-            .where('isArchived', isEqualTo: true)
-            .orderBy('createdAt', descending: true)
-            .snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return const Center(child: Text('No hay proyectos archivados.'));
-          }
+      body: StreamProvider<List<Project>>.value(
+        value: Provider.of<ProjectProvider>(context).archivedProjects,
+        initialData: const [],
+        child: Consumer<List<Project>>(
+          builder: (context, projects, child) {
+            if (projects.isEmpty) {
+              return const Center(child: Text('No hay proyectos archivados.'));
+            }
 
-          return ListView.builder(
-            itemCount: snapshot.data!.docs.length,
-            itemBuilder: (context, index) {
-              var project = snapshot.data!.docs[index];
-              var data = project.data() as Map<String, dynamic>;
-              var projectName = data['projectName'] ?? 'Sin nombre';
-              var clientName = data['clientName'] ?? 'Sin cliente';
+            return ListView.builder(
+              itemCount: projects.length,
+              itemBuilder: (context, index) {
+                final project = projects[index];
 
-              return Card(
-                color: Colors.grey[200],
-                child: ListTile(
-                  title: Text(projectName,
-                      style: const TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: Text('Cliente: $clientName'),
-                  trailing: ElevatedButton.icon(
-                    icon: const Icon(Icons.unarchive, size: 18),
-                    label: const Text('Restaurar'),
-                    onPressed: () => _unarchiveProject(project.id),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blueGrey,
-                      foregroundColor: Colors.white,
+                return Card(
+                  color: Colors.grey[200],
+                  child: ListTile(
+                    title: Text(project.projectName,
+                        style: const TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: Text('Cliente: ${project.clientName}'),
+                    trailing: ElevatedButton.icon(
+                      icon: const Icon(Icons.unarchive, size: 18),
+                      label: const Text('Restaurar'),
+                      onPressed: () => _unarchiveProject(project.id),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blueGrey,
+                        foregroundColor: Colors.white,
+                      ),
                     ),
                   ),
-                ),
-              );
-            },
-          );
-        },
+                );
+              },
+            );
+          },
+        ),
       ),
     );
   }

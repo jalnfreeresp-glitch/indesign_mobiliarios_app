@@ -1,15 +1,8 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:indesign_mobiliarios_app/providers/user_provider.dart';
 import 'package:indesign_mobiliarios_app/screens/admin/create_user_screen.dart';
 import 'package:indesign_mobiliarios_app/screens/admin/user_detail_screen.dart';
-
-// Definimos constantes para las colecciones y campos
-class FirestoreConstants {
-  static const String usersCollection = 'users';
-  static const String fullNameField = 'fullName';
-  static const String roleField = 'role';
-  static const String isActiveField = 'isActive';
-}
+import 'package:provider/provider.dart';
 
 class AdminUsersScreen extends StatelessWidget {
   const AdminUsersScreen({super.key});
@@ -21,28 +14,18 @@ class AdminUsersScreen extends StatelessWidget {
         title: const Text('Gestionar Usuarios'),
         backgroundColor: Colors.orange,
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection(FirestoreConstants.usersCollection)
-            .snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
+      body: StreamProvider<List<UserModel>>.value(
+        value: Provider.of<UserProvider>(context).users,
+        initialData: const [],
+        child: Consumer<List<UserModel>>(
+          builder: (context, users, child) {
+            if (users.isEmpty) {
+              return const Center(child: Text('No hay usuarios registrados.'));
+            }
 
-          // Nuevo: Manejo de errores
-          if (snapshot.hasError) {
-            return const Center(
-                child: Text('Ocurrió un error al cargar los usuarios.'));
-          }
-
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return const Center(child: Text('No hay usuarios registrados.'));
-          }
-
-          // Separamos el ListView en un método para mejor legibilidad
-          return _buildUserListView(snapshot.data!.docs);
-        },
+            return _buildUserListView(users);
+          },
+        ),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
@@ -58,42 +41,26 @@ class AdminUsersScreen extends StatelessWidget {
     );
   }
 
-  // Nuevo método para construir la lista de usuarios
-  Widget _buildUserListView(List<DocumentSnapshot> userDocs) {
+  Widget _buildUserListView(List<UserModel> users) {
     return ListView.builder(
-      itemCount: userDocs.length,
+      itemCount: users.length,
       itemBuilder: (context, index) {
-        final user = userDocs[index];
-        final userData =
-            user.data() as Map<String, dynamic>?; // Hacemos el mapa nullable
-
-        // Manejamos el caso en que userData sea nulo
-        if (userData == null) {
-          return const SizedBox.shrink(); // Widget vacío si los datos son nulos
-        }
-
-        final isActive =
-            userData[FirestoreConstants.isActiveField] as bool? ?? false;
-        final fullName =
-            userData[FirestoreConstants.fullNameField] as String? ??
-                'Sin Nombre';
-        final role =
-            userData[FirestoreConstants.roleField] as String? ?? 'Sin Rol';
+        final user = users[index];
 
         return ListTile(
           leading: Icon(
             Icons.circle,
-            color: isActive ? Colors.green : Colors.red,
+            color: user.isActive ? Colors.green : Colors.red,
             size: 14,
           ),
-          title: Text(fullName),
-          subtitle: Text(role),
+          title: Text(user.fullName),
+          subtitle: Text(user.role),
           trailing: const Icon(Icons.arrow_forward_ios),
           onTap: () {
             Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (context) => UserDetailScreen(userId: user.id),
+                builder: (context) => UserDetailScreen(userId: user.uid),
               ),
             );
           },

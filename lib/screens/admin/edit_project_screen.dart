@@ -1,8 +1,9 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:indesign_mobiliarios_app/providers/project_provider.dart';
+import 'package:provider/provider.dart';
 
 class EditProjectScreen extends StatefulWidget {
-  final DocumentSnapshot project; // Recibimos el proyecto completo
+  final Project project;
   const EditProjectScreen({super.key, required this.project});
 
   @override
@@ -18,12 +19,11 @@ class _EditProjectScreenState extends State<EditProjectScreen> {
   @override
   void initState() {
     super.initState();
-    final data = widget.project.data() as Map<String, dynamic>;
-    _projectNameController = TextEditingController(text: data['projectName']);
+    _projectNameController = TextEditingController(text: widget.project.projectName);
     _montoTotalController =
-        TextEditingController(text: data['montoTotal'].toString());
+        TextEditingController(text: widget.project.montoTotal.toString());
     _manoDeObraController =
-        TextEditingController(text: data['costoManoDeObra'].toString());
+        TextEditingController(text: widget.project.costoManoDeObra.toString());
   }
 
   @override
@@ -40,15 +40,15 @@ class _EditProjectScreenState extends State<EditProjectScreen> {
     }
 
     try {
-      await FirebaseFirestore.instance
-          .collection('projects')
-          .doc(widget.project.id)
-          .update({
-        'projectName': _projectNameController.text.trim(),
-        'montoTotal': double.tryParse(_montoTotalController.text.trim()) ?? 0.0,
-        'costoManoDeObra':
-            double.tryParse(_manoDeObraController.text.trim()) ?? 0.0,
-      });
+      await Provider.of<ProjectProvider>(context, listen: false).updateProject(
+        widget.project.id,
+        {
+          'projectName': _projectNameController.text.trim(),
+          'montoTotal': double.tryParse(_montoTotalController.text.trim()) ?? 0.0,
+          'costoManoDeObra':
+              double.tryParse(_manoDeObraController.text.trim()) ?? 0.0,
+        },
+      );
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

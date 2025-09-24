@@ -1,8 +1,10 @@
 // create_project_screen.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
+import 'package:indesign_mobiliarios_app/constants.dart';
+import 'package:indesign_mobiliarios_app/providers/catalog_provider.dart';
+import 'package:provider/provider.dart';
 
 // --- Modelo Auxiliar ---
 class BudgetItem {
@@ -24,14 +26,26 @@ class BudgetItem {
 }
 
 // --- Pantalla Principal: Crear Proyecto ---
-class CreateProjectScreen extends StatefulWidget {
+class CreateProjectScreen extends StatelessWidget {
   const CreateProjectScreen({super.key});
 
   @override
-  State<CreateProjectScreen> createState() => _CreateProjectScreenState();
+  Widget build(BuildContext context) {
+    return ChangeNotifierProvider(
+      create: (_) => CatalogProvider(),
+      child: const _CreateProjectView(),
+    );
+  }
 }
 
-class _CreateProjectScreenState extends State<CreateProjectScreen> {
+class _CreateProjectView extends StatefulWidget {
+  const _CreateProjectView();
+
+  @override
+  State<_CreateProjectView> createState() => _CreateProjectViewState();
+}
+
+class _CreateProjectViewState extends State<_CreateProjectView> {
   final _formKey = GlobalKey<FormState>();
   final _projectNameController = TextEditingController();
   final _transportController = TextEditingController(text: '0');
@@ -57,11 +71,6 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
     _laborController.dispose();
     _profitPercentageController.dispose();
     super.dispose();
-  }
-
-  String? _getCurrentUserId() {
-    final user = FirebaseAuth.instance.currentUser;
-    return user?.uid;
   }
 
   void _calculateTotals() {
@@ -178,7 +187,7 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
       return;
     }
 
-    final projectRef = FirebaseFirestore.instance.collection('projects').doc();
+    final projectRef = FirebaseFirestore.instance.collection(projectsCollection).doc();
     try {
       WriteBatch batch = FirebaseFirestore.instance.batch();
       batch.set(projectRef, {
@@ -208,7 +217,7 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
         });
 
         final shoppingListItemRef =
-            FirebaseFirestore.instance.collection('shopping_list').doc();
+            FirebaseFirestore.instance.collection(shoppingListCollection).doc();
         batch.set(shoppingListItemRef, {
           'catalogNodeId': item.catalogNodeId,
           'materialName': item.name,
@@ -276,39 +285,9 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
     );
   }
 
-  Future<void> _deleteNodeAndDescendants(String nodeId) async {
-    final childrenSnapshot = await FirebaseFirestore.instance
-        .collection('catalog_nodes')
-        .where('parentId', isEqualTo: nodeId)
-        .get();
-    for (var child in childrenSnapshot.docs) {
-      await _deleteNodeAndDescendants(child.id);
-    }
-    await FirebaseFirestore.instance
-        .collection('catalog_nodes')
-        .doc(nodeId)
-        .delete();
-  }
-
-  Future<String> _buildFullRouteForId(String? parentId) async {
-    if (parentId == null || parentId == 'root') return '';
-    try {
-      final doc = await FirebaseFirestore.instance
-          .collection('catalog_nodes')
-          .doc(parentId)
-          .get();
-      if (!doc.exists) return '';
-      final data = doc.data()!;
-      final parentName = data['name'];
-      final grandParentId = data['parentId'];
-      final parentPath = await _buildFullRouteForId(grandParentId);
-      return parentPath.isEmpty ? parentName : '$parentPath > $parentName';
-    } catch (e) {
-      return 'Error cargando ruta';
-    }
-  }
-
   void _showAddNodeDialog({String parentId = 'root'}) {
+    final catalogProvider =
+        Provider.of<CatalogProvider>(context, listen: false);
     final formKey = GlobalKey<FormState>();
     final nameController = TextEditingController();
     final priceController = TextEditingController();
@@ -415,29 +394,19 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
                       String fullName = nameController.text.trim();
                       if (isFinalProduct) {
                         final parentRoute =
-                            await _buildFullRouteForId(parentId);
+                            await catalogProvider.buildFullRouteForId(parentId);
                         fullName = parentRoute.isEmpty
                             ? fullName
                             : '$parentRoute > $fullName';
                       }
-                      final data = {
-                        'name': fullName,
-                        'parentId': parentId,
-                        'isFinalProduct': isFinalProduct,
-                        if (isFinalProduct)
-                          'price': double.tryParse(priceController.text) ?? 0.0,
-                        if (isFinalProduct)
-                          'presentation': presentationController.text.trim(),
-                        if (isFinalProduct)
-                          'suggestedSupplier': supplierController.text.trim(),
-                        'createdAt': FieldValue.serverTimestamp(),
-                        'createdBy': _getCurrentUserId(),
-                        'updatedAt': FieldValue.serverTimestamp(),
-                        'updatedBy': _getCurrentUserId(),
-                      };
-                      await FirebaseFirestore.instance
-                          .collection('catalog_nodes')
-                          .add(data);
+                      await catalogProvider.createNode(
+                        name: fullName,
+                        parentId: parentId,
+                        isFinalProduct: isFinalProduct,
+                        price: double.tryParse(priceController.text) ?? 0.0,
+                        presentation: presentationController.text.trim(),
+                        supplier: supplierController.text.trim(),
+                      );
 
                       if (!context.mounted) return;
                       Navigator.of(context).pop();
@@ -458,6 +427,8 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
   }
 
   void _showEditDeleteDialog(DocumentSnapshot node) {
+    final catalogProvider =
+        Provider.of<CatalogProvider>(context, listen: false);
     final data = node.data() as Map<String, dynamic>;
     String displayName = data['name'];
     if (data['isFinalProduct'] == true) {
@@ -549,7 +520,7 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
                     );
                     if (confirmation == true) {
                       try {
-                        await _deleteNodeAndDescendants(node.id);
+                        await catalogProvider.deleteNodeAndDescendants(node.id);
                         if (!context.mounted) return;
                         Navigator.of(context).pop();
                         ScaffoldMessenger.of(context)
@@ -572,7 +543,8 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
                     String fullName = nameController.text.trim();
                     final parentId = data['parentId'];
                     if (isFinalProduct) {
-                      final parentRoute = await _buildFullRouteForId(parentId);
+                      final parentRoute =
+                          await catalogProvider.buildFullRouteForId(parentId);
                       fullName = parentRoute.isEmpty
                           ? fullName
                           : '$parentRoute > $fullName';
@@ -586,13 +558,8 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
                         'presentation': presentationController.text.trim(),
                       if (isFinalProduct)
                         'suggestedSupplier': supplierController.text.trim(),
-                      'updatedAt': FieldValue.serverTimestamp(),
-                      'updatedBy': _getCurrentUserId(),
                     };
-                    await FirebaseFirestore.instance
-                        .collection('catalog_nodes')
-                        .doc(node.id)
-                        .update(updatedData);
+                    await catalogProvider.updateNode(node.id, updatedData);
 
                     if (!context.mounted) return;
                     Navigator.of(context).pop();
@@ -632,7 +599,7 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
                 Expanded(
                   child: StreamBuilder<QuerySnapshot<Object?>>(
                     stream: FirebaseFirestore.instance
-                        .collection('users')
+                        .collection(usersCollection)
                         .where('role', isEqualTo: 'cliente')
                         .snapshots(),
                     builder: (context, snapshot) {
@@ -705,7 +672,7 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
                   height: 300, // Adjust height as needed
                   child: FutureBuilder<QuerySnapshot>(
                     future: FirebaseFirestore.instance
-                        .collection('catalog_nodes')
+                        .collection(catalogNodesCollection)
                         .where('parentId', isEqualTo: 'root')
                         .get(),
                     builder: (context, snapshot) {
@@ -840,7 +807,7 @@ class __TreeNodeState extends State<_TreeNode> {
   Widget build(BuildContext context) {
     return StreamBuilder<DocumentSnapshot>(
       stream: FirebaseFirestore.instance
-          .collection('catalog_nodes')
+          .collection(catalogNodesCollection)
           .doc(widget.nodeId)
           .snapshots(),
       builder: (context, snapshot) {
@@ -900,7 +867,7 @@ class __TreeNodeState extends State<_TreeNode> {
             if (_isExpanded)
               StreamBuilder<QuerySnapshot>(
                 stream: FirebaseFirestore.instance
-                    .collection('catalog_nodes')
+                    .collection(catalogNodesCollection)
                     .where('parentId', isEqualTo: widget.nodeId)
                     .snapshots(),
                 builder: (context, childSnapshot) {

@@ -3,6 +3,8 @@ import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+
+
 class CatalogProvider with ChangeNotifier {
   List<DocumentSnapshot> _nodes = [];
   List<DocumentSnapshot> get nodes => _nodes;
@@ -104,5 +106,20 @@ class CatalogProvider with ChangeNotifier {
         .collection('catalog_nodes')
         .doc(nodeId)
         .delete();
+  }
+
+  // Update existing node
+  Future<void> updateNode(String nodeId, Map<String, dynamic> data) async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      data['updatedAt'] = FieldValue.serverTimestamp();
+      data['updatedBy'] = user?.uid;
+      await FirebaseFirestore.instance
+          .collection('catalog_nodes')
+          .doc(nodeId)
+          .update(data);
+    } catch (e) {
+      if (kDebugMode) print('Error actualizando nodo: $e');
+    }
   }
 }

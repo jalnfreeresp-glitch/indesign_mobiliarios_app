@@ -1,56 +1,35 @@
+
 // catalog_node_screen.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_speed_dial/flutter_speed_dial.dart';
+import 'package:indesign_mobiliarios_app/providers/catalog_provider.dart';
+import 'package:provider/provider.dart';
 import 'final_materials_screen.dart';
 
-class CatalogNodeScreen extends StatefulWidget {
+class CatalogNodeScreen extends StatelessWidget {
   const CatalogNodeScreen({super.key});
 
   @override
-  State<CatalogNodeScreen> createState() => _CatalogNodeScreenState();
+  Widget build(BuildContext context) {
+    return ChangeNotifierProvider(
+      create: (_) => CatalogProvider()..loadNodes('root'),
+      child: const _CatalogNodeView(),
+    );
+  }
 }
 
-class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
-  String? _getCurrentUserId() {
-    final user = FirebaseAuth.instance.currentUser;
-    return user?.uid;
-  }
+class _CatalogNodeView extends StatefulWidget {
+  const _CatalogNodeView();
 
-  Future<void> _deleteNodeAndDescendants(String nodeId) async {
-    final childrenSnapshot = await FirebaseFirestore.instance
-        .collection('catalog_nodes')
-        .where('parentId', isEqualTo: nodeId)
-        .get();
-    for (var child in childrenSnapshot.docs) {
-      await _deleteNodeAndDescendants(child.id);
-    }
-    await FirebaseFirestore.instance
-        .collection('catalog_nodes')
-        .doc(nodeId)
-        .delete();
-  }
+  @override
+  State<_CatalogNodeView> createState() => _CatalogNodeViewState();
+}
 
-  Future<String> _buildFullRouteForId(String? parentId) async {
-    if (parentId == null || parentId == 'root') return '';
-    try {
-      final doc = await FirebaseFirestore.instance
-          .collection('catalog_nodes')
-          .doc(parentId)
-          .get();
-      if (!doc.exists) return '';
-      final data = doc.data()!;
-      final parentName = data['name'];
-      final grandParentId = data['parentId'];
-      final parentPath = await _buildFullRouteForId(grandParentId);
-      return parentPath.isEmpty ? parentName : '$parentPath > $parentName';
-    } catch (e) {
-      return 'Error cargando ruta';
-    }
-  }
-
+class _CatalogNodeViewState extends State<_CatalogNodeView> {
   void _showAddNodeDialog({String parentId = 'root'}) {
+    final catalogProvider =
+        Provider.of<CatalogProvider>(context, listen: false);
     final formKey = GlobalKey<FormState>();
     final nameController = TextEditingController();
     final priceController = TextEditingController();
@@ -156,29 +135,20 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
                     if (formKey.currentState!.validate()) {
                       String fullName = nameController.text.trim();
                       if (isFinalProduct) {
-                        final parentRoute = await _buildFullRouteForId(parentId);
+                        final parentRoute =
+                            await catalogProvider.buildFullRouteForId(parentId);
                         fullName = parentRoute.isEmpty
                             ? fullName
                             : '$parentRoute > $fullName';
                       }
-                      final data = {
-                        'name': fullName,
-                        'parentId': parentId,
-                        'isFinalProduct': isFinalProduct,
-                        if (isFinalProduct)
-                          'price': double.tryParse(priceController.text) ?? 0.0,
-                        if (isFinalProduct)
-                          'presentation': presentationController.text.trim(),
-                        if (isFinalProduct)
-                          'suggestedSupplier': supplierController.text.trim(),
-                        'createdAt': FieldValue.serverTimestamp(),
-                        'createdBy': _getCurrentUserId(),
-                        'updatedAt': FieldValue.serverTimestamp(),
-                        'updatedBy': _getCurrentUserId(),
-                      };
-                      await FirebaseFirestore.instance
-                          .collection('catalog_nodes')
-                          .add(data);
+                      await catalogProvider.createNode(
+                        name: fullName,
+                        parentId: parentId,
+                        isFinalProduct: isFinalProduct,
+                        price: double.tryParse(priceController.text) ?? 0.0,
+                        presentation: presentationController.text.trim(),
+                        supplier: supplierController.text.trim(),
+                      );
 
                       if (!context.mounted) return;
                       Navigator.of(context).pop();
@@ -186,8 +156,6 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
                         content: Text('Elemento creado con éxito'),
                         backgroundColor: Colors.green,
                       ));
-                      // Refresh the view by rebuilding the screen
-                      setState(() {});
                     }
                   },
                   child: const Text('Guardar'),
@@ -201,6 +169,8 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
   }
 
   void _showEditDeleteDialog(DocumentSnapshot node) {
+    final catalogProvider =
+        Provider.of<CatalogProvider>(context, listen: false);
     final data = node.data() as Map<String, dynamic>;
     String displayName = data['name'];
     if (data['isFinalProduct'] == true) {
@@ -259,11 +229,12 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
                 ),
               ),
               actions: [
-                 if (!isFinalProduct)
+                if (!isFinalProduct)
                   TextButton(
                     onPressed: () {
                       Navigator.of(context).pop(); // Close the edit dialog
-                      _showAddNodeDialog(parentId: node.id); // Open add dialog for child
+                      _showAddNodeDialog(
+                          parentId: node.id); // Open add dialog for child
                     },
                     child: const Text('Añadir Hijo'),
                   ),
@@ -291,7 +262,8 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
                     );
                     if (confirmation == true) {
                       try {
-                        await _deleteNodeAndDescendants(node.id);
+                        await catalogProvider
+                            .deleteNodeAndDescendants(node.id);
                         if (!context.mounted) return;
                         Navigator.of(context).pop();
                         ScaffoldMessenger.of(context)
@@ -299,7 +271,6 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
                           content: Text('Eliminado'),
                           backgroundColor: Colors.red,
                         ));
-                        setState((){});
                       } catch (e) {
                         if (!context.mounted) return;
                         ScaffoldMessenger.of(context)
@@ -315,10 +286,11 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
                     String fullName = nameController.text.trim();
                     final parentId = data['parentId'];
                     if (isFinalProduct) {
-                       final parentRoute = await _buildFullRouteForId(parentId);
-                        fullName = parentRoute.isEmpty
-                            ? fullName
-                            : '$parentRoute > $fullName';
+                      final parentRoute =
+                          await catalogProvider.buildFullRouteForId(parentId);
+                      fullName = parentRoute.isEmpty
+                          ? fullName
+                          : '$parentRoute > $fullName';
                     }
                     final updatedData = {
                       'name': fullName,
@@ -329,13 +301,8 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
                         'presentation': presentationController.text.trim(),
                       if (isFinalProduct)
                         'suggestedSupplier': supplierController.text.trim(),
-                      'updatedAt': FieldValue.serverTimestamp(),
-                      'updatedBy': _getCurrentUserId(),
                     };
-                    await FirebaseFirestore.instance
-                        .collection('catalog_nodes')
-                        .doc(node.id)
-                        .update(updatedData);
+                    await catalogProvider.updateNode(node.id, updatedData);
 
                     if (!context.mounted) return;
                     Navigator.of(context).pop();
@@ -343,7 +310,6 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
                       content: Text('Actualizado'),
                       backgroundColor: Colors.blue,
                     ));
-                     setState((){});
                   },
                   child: const Text('Actualizar'),
                 ),
@@ -355,14 +321,6 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
     );
   }
 
-  Future<List<DocumentSnapshot>> _fetchRootNodes() async {
-    final snapshot = await FirebaseFirestore.instance
-        .collection('catalog_nodes')
-        .where('parentId', isEqualTo: 'root')
-        .get();
-    return snapshot.docs;
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -370,26 +328,20 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
         title: const Text('Catálogo de Materiales'),
         backgroundColor: Colors.orange,
       ),
-      body: FutureBuilder<List<DocumentSnapshot>>(
-        future: _fetchRootNodes(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (!snapshot.hasData || snapshot.data!.isEmpty) {
+      body: Consumer<CatalogProvider>(
+        builder: (context, provider, child) {
+          if (provider.nodes.isEmpty) {
             return const Center(
                 child: Text('El catálogo está vacío. Añade un elemento.'));
           }
-          final rootNodes = snapshot.data!;
           return ListView.builder(
             padding: const EdgeInsets.all(8),
-            itemCount: rootNodes.length,
+            itemCount: provider.nodes.length,
             itemBuilder: (context, index) {
               return _TreeNode(
-                nodeId: rootNodes[index].id,
+                nodeId: provider.nodes[index].id,
                 level: 0,
                 onLongPress: _showEditDeleteDialog,
-                onNodeUpdated: () => setState(() {}),
               );
             },
           );
@@ -425,13 +377,11 @@ class _TreeNode extends StatefulWidget {
   final String nodeId;
   final int level;
   final Function(DocumentSnapshot) onLongPress;
-  final VoidCallback onNodeUpdated;
 
   const _TreeNode({
     required this.nodeId,
     required this.level,
     required this.onLongPress,
-    required this.onNodeUpdated,
   });
 
   @override
@@ -449,37 +399,40 @@ class __TreeNodeState extends State<_TreeNode> {
           .doc(widget.nodeId)
           .snapshots(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData) {
-          return const SizedBox.shrink(); // Don't show anything while loading
+        if (!snapshot.hasData || !snapshot.data!.exists) {
+          return const SizedBox.shrink();
         }
         final node = snapshot.data!;
-        if (!node.exists) {
-          return const SizedBox.shrink(); // Or some placeholder for a deleted node
-        }
         final data = node.data() as Map<String, dynamic>;
         final bool isFinalProduct = data['isFinalProduct'] ?? false;
         String displayName = data['name'] ?? 'Sin Nombre';
-        if(isFinalProduct) {
+        if (isFinalProduct) {
           final parts = displayName.split(' > ');
           if (parts.length > 1) {
             displayName = parts.last;
           }
         }
 
+        Color folderColor = widget.level == 0 ? Colors.orange : Colors.blue;
 
         final tile = ListTile(
           contentPadding: EdgeInsets.only(left: widget.level * 20.0, right: 8),
           leading: isFinalProduct
               ? const Icon(Icons.inventory_2, color: Colors.green)
-              : Icon(_isExpanded ? Icons.folder_open : Icons.folder, color: Colors.blue),
+              : Icon(_isExpanded ? Icons.folder_open : Icons.folder,
+                  color: folderColor),
           title: Text(displayName),
           subtitle: isFinalProduct
               ? Text(
                   '\$${(data['price'] as num? ?? 0).toStringAsFixed(2)} - ${data['presentation'] ?? ''}')
               : null,
-          trailing: isFinalProduct ? null : Icon(_isExpanded ? Icons.expand_less : Icons.expand_more),
+          trailing: isFinalProduct
+              ? null
+              : Icon(_isExpanded ? Icons.expand_less : Icons.expand_more),
           onTap: () {
-            if (!isFinalProduct) {
+            if (isFinalProduct) {
+              // widget.onMaterialSelected(node);
+            } else {
               setState(() {
                 _isExpanded = !_isExpanded;
               });
@@ -490,17 +443,15 @@ class __TreeNodeState extends State<_TreeNode> {
 
         if (isFinalProduct) {
           return Card(
-            margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-            child: tile
-            );
+              margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+              child: tile);
         }
 
         return Column(
           children: [
             Card(
-              margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-              child: tile
-            ),
+                margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                child: tile),
             if (_isExpanded)
               StreamBuilder<QuerySnapshot>(
                 stream: FirebaseFirestore.instance
@@ -524,7 +475,6 @@ class __TreeNodeState extends State<_TreeNode> {
                         nodeId: children[index].id,
                         level: widget.level + 1,
                         onLongPress: widget.onLongPress,
-                        onNodeUpdated: widget.onNodeUpdated,
                       );
                     },
                   );

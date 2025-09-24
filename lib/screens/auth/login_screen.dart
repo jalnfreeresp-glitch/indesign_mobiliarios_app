@@ -45,7 +45,7 @@ class _LoginScreenState extends State<LoginScreen> {
         if (userDoc.exists) {
           final bool isActive = userDoc.data()?['isActive'] ?? false;
           if (isActive) {
-            await FirebaseMessagingService().initialize();
+            await FirebaseMessagingService().initialize(userCredential.user!.uid);
           } else {
             await FirebaseAuth.instance.signOut();
             if (mounted) {
@@ -99,7 +99,7 @@ class _LoginScreenState extends State<LoginScreen> {
             .doc(userCredential.user!.uid)
             .get();
         if (userDoc.exists && (userDoc.data()?['isActive'] ?? false)) {
-          await FirebaseMessagingService().initialize();
+          await FirebaseMessagingService().initialize(userCredential.user!.uid);
         } else {
           await FirebaseAuth.instance.signOut();
           if (mounted) {
