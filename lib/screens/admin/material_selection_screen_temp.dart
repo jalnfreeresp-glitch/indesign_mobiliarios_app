@@ -1,25 +1,25 @@
-// catalog_node_screen.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_speed_dial/flutter_speed_dial.dart';
 import 'final_materials_screen.dart';
 
-class CatalogNodeScreen extends StatefulWidget {
+class MaterialSelectionScreenTemp extends StatefulWidget {
   final String? parentId;
   final String? parentName;
 
-  const CatalogNodeScreen({
+  const MaterialSelectionScreenTemp({
     super.key,
     this.parentId,
     this.parentName,
   });
 
   @override
-  State<CatalogNodeScreen> createState() => _CatalogNodeScreenState();
+  State<MaterialSelectionScreenTemp> createState() =>
+      _MaterialSelectionScreenTempState();
 }
 
-class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
+class _MaterialSelectionScreenTempState extends State<MaterialSelectionScreenTemp> {
   late String _currentParentId;
   late String _currentTitle;
 
@@ -27,7 +27,7 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
   void initState() {
     super.initState();
     _currentParentId = widget.parentId ?? 'root';
-    _currentTitle = widget.parentName ?? 'Catálogo Principal';
+    _currentTitle = widget.parentName ?? 'Catálogo de Materiales';
   }
 
   String? _getCurrentUserId() {
@@ -49,8 +49,6 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
         .delete();
   }
 
-  
-
   Future<String> _buildFullRoute() async {
     if (_currentParentId == 'root') return 'Catálogo Principal';
     try {
@@ -58,11 +56,13 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
           .collection('catalog_nodes')
           .doc(_currentParentId)
           .get();
+      if (!mounted) return '';
       if (!doc.exists) return '';
       final data = doc.data()!;
       final parentName = data['name'];
       final grandParentId = data['parentId'];
       final parentPath = await _buildFullRouteForId(grandParentId);
+      if (!mounted) return '';
       return parentPath.isEmpty ? parentName : '$parentPath > $parentName';
     } catch (e) {
       return 'Error cargando ruta';
@@ -76,11 +76,13 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
           .collection('catalog_nodes')
           .doc(parentId)
           .get();
+      if (!mounted) return '';
       if (!doc.exists) return '';
       final data = doc.data()!;
       final parentName = data['name'];
       final grandParentId = data['parentId'];
       final parentPath = await _buildFullRouteForId(grandParentId);
+      if (!mounted) return '';
       return parentPath.isEmpty ? parentName : '$parentPath > $parentName';
     } catch (e) {
       return 'Error cargando ruta';
@@ -88,16 +90,16 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
   }
 
   void _showAddNodeDialog() {
-    final formKey = GlobalKey<FormState>();
-    final nameController = TextEditingController();
-    final priceController = TextEditingController();
-    final presentationController = TextEditingController();
-    final supplierController = TextEditingController();
-    bool isFinalProduct = false;
-
     showDialog(
       context: context,
       builder: (context) {
+        final formKey = GlobalKey<FormState>();
+        final nameController = TextEditingController();
+        final priceController = TextEditingController();
+        final presentationController = TextEditingController();
+        final supplierController = TextEditingController();
+        bool isFinalProduct = false;
+
         return StatefulBuilder(
           builder: (context, setState) {
             return AlertDialog(
@@ -107,7 +109,6 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
                 child: SingleChildScrollView(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
-                    // Dentro del Column del AlertDialog
                     children: [
                       TextFormField(
                         controller: nameController,
@@ -133,8 +134,6 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12)),
                       ),
-
-                      // ✅ Bloque corregido: if + ...[] bien formateado
                       if (isFinalProduct) ...[
                         const SizedBox(height: 16),
                         TextFormField(
@@ -197,6 +196,7 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
                       String fullName = nameController.text.trim();
                       if (isFinalProduct) {
                         final fullRoute = await _buildFullRoute();
+                        if (!context.mounted) return;
                         fullName = '$fullRoute > $fullName';
                       }
                       final data = {
@@ -256,6 +256,7 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
         TextEditingController(text: data['suggestedSupplier'] ?? '');
     bool isFinalProduct = data['isFinalProduct'] ?? false;
 
+    if (!mounted) return;
     showDialog(
       context: context,
       builder: (context) {
@@ -324,6 +325,7 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
                         await _deleteNodeAndDescendants(node.id);
                         if (!context.mounted) return;
                         Navigator.of(context).pop();
+                        if (!context.mounted) return;
                         ScaffoldMessenger.of(context)
                             .showSnackBar(const SnackBar(
                           content: Text('Eliminado'),
@@ -344,6 +346,7 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
                     String fullName = nameController.text.trim();
                     if (isFinalProduct) {
                       final fullRoute = await _buildFullRoute();
+                      if (!context.mounted) return;
                       fullName = '$fullRoute > $fullName';
                     }
                     final updatedData = {
@@ -382,7 +385,6 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
     );
   }
 
-  // 1. Agrega este método para obtener los nodos hijos:
   Future<List<Map<String, dynamic>>> _fetchNodes() async {
     final snapshot = await FirebaseFirestore.instance
         .collection('catalog_nodes')
@@ -395,126 +397,202 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
     }).toList();
   }
 
+  void _showQuantityDialog(Map<String, dynamic> node) {
+    final quantityController = TextEditingController(text: '1');
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Seleccionar Cantidad'),
+          content: TextFormField(
+            controller: quantityController,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(labelText: 'Cantidad'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final quantity = int.tryParse(quantityController.text) ?? 1;
+                final result = {
+                  'id': node['id'],
+                  'name': node['name'],
+                  'price': node['price'],
+                  'presentation': node['presentation'] ?? '',
+                  'isFinalProduct': true,
+                  'quantity': quantity,
+                };
+                Navigator.of(context).pop(result);
+              },
+              child: const Text('Añadir'),
+            ),
+          ],
+        );
+      },
+    ).then((selectedValue) {
+      if (selectedValue != null) {
+        if (!mounted) return;
+        Navigator.of(context).pop(selectedValue);
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<List<Map<String, dynamic>>>(
       future: _fetchNodes(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
-        final nodes = snapshot.data!;
+        final nodes = snapshot.data ?? [];
         return Scaffold(
           appBar: AppBar(
             title: Text(_currentTitle),
-            backgroundColor: Colors.orange,
+            backgroundColor: Colors.deepPurple,
             leading: _currentParentId != 'root'
                 ? IconButton(
                     icon: const Icon(Icons.arrow_back),
                     onPressed: () => Navigator.of(context).pop())
                 : null,
           ),
-          body: nodes.isEmpty
-              ? const Center(
-                  child: Text('Esta categoría está vacía'),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.all(8),
-                  itemCount: nodes.length,
-                  itemBuilder: (context, index) {
-                    final node = nodes[index];
-                    final bool isFinalProduct = node['isFinalProduct'] ?? false;
-                    return Card(
-                      margin: const EdgeInsets.symmetric(
-                          vertical: 4, horizontal: 8),
-                      elevation: 2,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(12),
-                        onTap: () {
-                          if (!isFinalProduct) {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                  builder: (_) => CatalogNodeScreen(
-                                      parentId: node['id'],
-                                      parentName: node['name'])),
-                            );
-                          }
-                        },
-                        onLongPress: () async {
-                          final docSnap = await FirebaseFirestore.instance
-                              .collection('catalog_nodes')
-                              .doc(node['id'])
-                              .get();
-                          if (context.mounted) {
-                            _showEditDeleteDialog(docSnap);
-                          }
-                        },
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 12),
-                          child: Row(
-                            children: [
-                              if (isFinalProduct)
-                                Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                      color: Colors.green[100],
-                                      shape: BoxShape.circle),
-                                  child: const Icon(Icons.shopping_cart,
-                                      color: Colors.green, size: 20),
-                                )
-                              else
-                                Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                      color: Colors.blue[100],
-                                      shape: BoxShape.circle),
-                                  child: const Icon(Icons.folder,
-                                      color: Colors.blue, size: 20),
-                                ),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
+          body: Column(
+            children: [
+              if (_currentParentId != 'root')
+                Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: FutureBuilder<String>(
+                    future: _buildFullRoute(),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Text('Cargando ruta...');
+                      }
+                      return Text(
+                        snapshot.data ?? '',
+                        style: const TextStyle(fontStyle: FontStyle.italic),
+                      );
+                    },
+                  ),
+                ),
+              Expanded(
+                child: nodes.isEmpty
+                    ? const Center(
+                        child: Text('Esta categoría está vacía'),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.all(8),
+                        itemCount: nodes.length,
+                        itemBuilder: (context, index) {
+                          final node = nodes[index];
+                          final bool isFinalProduct =
+                              node['isFinalProduct'] ?? false;
+                          return Card(
+                            margin: const EdgeInsets.symmetric(
+                                vertical: 4, horizontal: 8),
+                            elevation: 4,
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8)),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(8),
+                              onTap: () {
+                                if (isFinalProduct) {
+                                  _showQuantityDialog(node);
+                                } else {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                        builder: (_) => MaterialSelectionScreenTemp(
+                                            parentId: node['id'],
+                                            parentName: node['name'])),
+                                  ).then((selectedValue) {
+                                    if (selectedValue != null) {
+                                      if (!context.mounted) return;
+                                      Navigator.of(context).pop(selectedValue);
+                                    }
+                                  });
+                                }
+                              },
+                              onLongPress: () async {
+                                final docSnap = await FirebaseFirestore.instance
+                                    .collection('catalog_nodes')
+                                    .doc(node['id'])
+                                    .get();
+                                if (!context.mounted) return;
+                                _showEditDeleteDialog(docSnap);
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 16, vertical: 12),
+                                child: Row(
                                   children: [
-                                    Text(
-                                      node['name'] ?? 'Sin Nombre',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: isFinalProduct
-                                            ? FontWeight.bold
-                                            : FontWeight.normal,
-                                        color: isFinalProduct
-                                            ? Colors.green[800]
-                                            : null,
+                                    if (isFinalProduct)
+                                      Container(
+                                        padding: const EdgeInsets.all(8),
+                                        decoration: BoxDecoration(
+                                            color: Colors.teal[100],
+                                            shape: BoxShape.circle),
+                                        child: const Icon(
+                                            Icons.add_shopping_cart,
+                                            color: Colors.teal, size: 20),
+                                      )
+                                    else
+                                      Container(
+                                        padding: const EdgeInsets.all(8),
+                                        decoration: BoxDecoration(
+                                            color: Colors.purple[100],
+                                            shape: BoxShape.circle),
+                                        child: const Icon(
+                                            Icons.create_new_folder_outlined,
+                                            color: Colors.purple, size: 20),
+                                      ),
+                                    const SizedBox(width: 16),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            node['name'] ?? 'Sin Nombre',
+                                            style: TextStyle(
+                                              fontSize: 18,
+                                              fontWeight: isFinalProduct
+                                                  ? FontWeight.bold
+                                                  : FontWeight.w600,
+                                              color: isFinalProduct
+                                                  ? Colors.teal[800]
+                                                  : Colors.purple[800],
+                                            ),
+                                          ),
+                                          if (isFinalProduct)
+                                            Text(
+                                              '\$${(node['price'] as num? ?? 0).toStringAsFixed(2)} - ${node['presentation'] ?? ''}',
+                                              style: const TextStyle(
+                                                  fontSize: 14,
+                                                  color: Colors.grey),
+                                            ),
+                                        ],
                                       ),
                                     ),
-                                    if (isFinalProduct)
-                                      Text(
-                                        '\$${(node['price'] as num? ?? 0).toStringAsFixed(2)} - ${node['presentation'] ?? ''}',
-                                        style: const TextStyle(
-                                            fontSize: 14, color: Colors.grey),
-                                      ),
+                                    if (!isFinalProduct)
+                                      const Icon(Icons.arrow_forward_ios,
+                                          size: 16, color: Colors.grey)
                                   ],
                                 ),
                               ),
-                              if (!isFinalProduct)
-                                const Icon(Icons.arrow_forward_ios,
-                                    size: 16, color: Colors.grey)
-                            ],
-                          ),
-                        ),
+                            ),
+                          );
+                        },
                       ),
-                    );
-                  },
-                ),
+              ),
+            ],
+          ),
           floatingActionButton: SpeedDial(
             icon: Icons.menu,
             activeIcon: Icons.close,
-            backgroundColor: Colors.orange,
+            backgroundColor: Colors.deepPurple,
             children: [
               SpeedDialChild(
                   child: const Icon(Icons.add),

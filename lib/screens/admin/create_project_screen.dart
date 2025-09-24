@@ -2,7 +2,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart'; // ✅ Importar Firestore
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
-import '../../components/hierarchical_material_selector.dart';
+import 'material_selection_screen_temp.dart';
 
 // --- Modelo Auxiliar ---
 class BudgetItem {
@@ -74,9 +74,11 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
   }
 
   Future<void> _showAddMaterialDialog() async {
-    final result = await showDialog<Map<String, dynamic>?>(
-      context: context,
-      builder: (context) => const HierarchicalMaterialSelector(),
+    final result = await Navigator.push<Map<String, dynamic>?>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const MaterialSelectionScreenTemp(),
+      ),
     );
 
     if (result != null && result['isFinalProduct'] == true && mounted) {
