@@ -6,30 +6,13 @@ import 'package:flutter_speed_dial/flutter_speed_dial.dart';
 import 'final_materials_screen.dart';
 
 class CatalogNodeScreen extends StatefulWidget {
-  final String? parentId;
-  final String? parentName;
-
-  const CatalogNodeScreen({
-    super.key,
-    this.parentId,
-    this.parentName,
-  });
+  const CatalogNodeScreen({super.key});
 
   @override
   State<CatalogNodeScreen> createState() => _CatalogNodeScreenState();
 }
 
 class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
-  late String _currentParentId;
-  late String _currentTitle;
-
-  @override
-  void initState() {
-    super.initState();
-    _currentParentId = widget.parentId ?? 'root';
-    _currentTitle = widget.parentName ?? 'Catálogo Principal';
-  }
-
   String? _getCurrentUserId() {
     final user = FirebaseAuth.instance.currentUser;
     return user?.uid;
@@ -47,26 +30,6 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
         .collection('catalog_nodes')
         .doc(nodeId)
         .delete();
-  }
-
-  
-
-  Future<String> _buildFullRoute() async {
-    if (_currentParentId == 'root') return 'Catálogo Principal';
-    try {
-      final doc = await FirebaseFirestore.instance
-          .collection('catalog_nodes')
-          .doc(_currentParentId)
-          .get();
-      if (!doc.exists) return '';
-      final data = doc.data()!;
-      final parentName = data['name'];
-      final grandParentId = data['parentId'];
-      final parentPath = await _buildFullRouteForId(grandParentId);
-      return parentPath.isEmpty ? parentName : '$parentPath > $parentName';
-    } catch (e) {
-      return 'Error cargando ruta';
-    }
   }
 
   Future<String> _buildFullRouteForId(String? parentId) async {
@@ -87,7 +50,7 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
     }
   }
 
-  void _showAddNodeDialog() {
+  void _showAddNodeDialog({String parentId = 'root'}) {
     final formKey = GlobalKey<FormState>();
     final nameController = TextEditingController();
     final priceController = TextEditingController();
@@ -107,7 +70,6 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
                 child: SingleChildScrollView(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
-                    // Dentro del Column del AlertDialog
                     children: [
                       TextFormField(
                         controller: nameController,
@@ -133,8 +95,6 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12)),
                       ),
-
-                      // ✅ Bloque corregido: if + ...[] bien formateado
                       if (isFinalProduct) ...[
                         const SizedBox(height: 16),
                         TextFormField(
@@ -196,12 +156,14 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
                     if (formKey.currentState!.validate()) {
                       String fullName = nameController.text.trim();
                       if (isFinalProduct) {
-                        final fullRoute = await _buildFullRoute();
-                        fullName = '$fullRoute > $fullName';
+                        final parentRoute = await _buildFullRouteForId(parentId);
+                        fullName = parentRoute.isEmpty
+                            ? fullName
+                            : '$parentRoute > $fullName';
                       }
                       final data = {
                         'name': fullName,
-                        'parentId': _currentParentId,
+                        'parentId': parentId,
                         'isFinalProduct': isFinalProduct,
                         if (isFinalProduct)
                           'price': double.tryParse(priceController.text) ?? 0.0,
@@ -220,12 +182,12 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
 
                       if (!context.mounted) return;
                       Navigator.of(context).pop();
-
-                      if (!context.mounted) return;
                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
                         content: Text('Elemento creado con éxito'),
                         backgroundColor: Colors.green,
                       ));
+                      // Refresh the view by rebuilding the screen
+                      setState(() {});
                     }
                   },
                   child: const Text('Guardar'),
@@ -260,7 +222,7 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
       context: context,
       builder: (context) {
         return StatefulBuilder(
-          builder: (context, setState) {
+          builder: (context, setStateDialog) {
             return AlertDialog(
               title: const Text('Editar Elemento'),
               content: SingleChildScrollView(
@@ -274,7 +236,7 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
                       title: const Text('Es un producto final (con precio)'),
                       value: isFinalProduct,
                       onChanged: (value) {
-                        setState(() {
+                        setStateDialog(() {
                           isFinalProduct = value ?? false;
                         });
                       },
@@ -297,6 +259,14 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
                 ),
               ),
               actions: [
+                 if (!isFinalProduct)
+                  TextButton(
+                    onPressed: () {
+                      Navigator.of(context).pop(); // Close the edit dialog
+                      _showAddNodeDialog(parentId: node.id); // Open add dialog for child
+                    },
+                    child: const Text('Añadir Hijo'),
+                  ),
                 TextButton(
                     onPressed: () => Navigator.of(context).pop(),
                     child: const Text('Cancelar')),
@@ -329,6 +299,7 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
                           content: Text('Eliminado'),
                           backgroundColor: Colors.red,
                         ));
+                        setState((){});
                       } catch (e) {
                         if (!context.mounted) return;
                         ScaffoldMessenger.of(context)
@@ -342,9 +313,12 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
                 ElevatedButton(
                   onPressed: () async {
                     String fullName = nameController.text.trim();
+                    final parentId = data['parentId'];
                     if (isFinalProduct) {
-                      final fullRoute = await _buildFullRoute();
-                      fullName = '$fullRoute > $fullName';
+                       final parentRoute = await _buildFullRouteForId(parentId);
+                        fullName = parentRoute.isEmpty
+                            ? fullName
+                            : '$parentRoute > $fullName';
                     }
                     final updatedData = {
                       'name': fullName,
@@ -365,12 +339,11 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
 
                     if (!context.mounted) return;
                     Navigator.of(context).pop();
-
-                    if (!context.mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
                       content: Text('Actualizado'),
                       backgroundColor: Colors.blue,
                     ));
+                     setState((){});
                   },
                   child: const Text('Actualizar'),
                 ),
@@ -382,158 +355,182 @@ class _CatalogNodeScreenState extends State<CatalogNodeScreen> {
     );
   }
 
-  // 1. Agrega este método para obtener los nodos hijos:
-  Future<List<Map<String, dynamic>>> _fetchNodes() async {
+  Future<List<DocumentSnapshot>> _fetchRootNodes() async {
     final snapshot = await FirebaseFirestore.instance
         .collection('catalog_nodes')
-        .where('parentId', isEqualTo: _currentParentId)
+        .where('parentId', isEqualTo: 'root')
         .get();
-    return snapshot.docs.map((doc) {
-      final data = doc.data();
-      data['id'] = doc.id;
-      return data;
-    }).toList();
+    return snapshot.docs;
   }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<List<Map<String, dynamic>>>(
-      future: _fetchNodes(),
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Catálogo de Materiales'),
+        backgroundColor: Colors.orange,
+      ),
+      body: FutureBuilder<List<DocumentSnapshot>>(
+        future: _fetchRootNodes(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (!snapshot.hasData || snapshot.data!.isEmpty) {
+            return const Center(
+                child: Text('El catálogo está vacío. Añade un elemento.'));
+          }
+          final rootNodes = snapshot.data!;
+          return ListView.builder(
+            padding: const EdgeInsets.all(8),
+            itemCount: rootNodes.length,
+            itemBuilder: (context, index) {
+              return _TreeNode(
+                nodeId: rootNodes[index].id,
+                level: 0,
+                onLongPress: _showEditDeleteDialog,
+                onNodeUpdated: () => setState(() {}),
+              );
+            },
+          );
+        },
+      ),
+      floatingActionButton: SpeedDial(
+        icon: Icons.menu,
+        activeIcon: Icons.close,
+        backgroundColor: Colors.orange,
+        children: [
+          SpeedDialChild(
+              child: const Icon(Icons.add),
+              label: 'Añadir Elemento Raíz',
+              onTap: () => _showAddNodeDialog()),
+          SpeedDialChild(
+            child: const Icon(Icons.inventory_2),
+            label: 'Ver Materiales Finales',
+            onTap: () {
+              Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const FinalMaterialsScreen()));
+            },
+          ),
+        ],
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+    );
+  }
+}
+
+class _TreeNode extends StatefulWidget {
+  final String nodeId;
+  final int level;
+  final Function(DocumentSnapshot) onLongPress;
+  final VoidCallback onNodeUpdated;
+
+  const _TreeNode({
+    required this.nodeId,
+    required this.level,
+    required this.onLongPress,
+    required this.onNodeUpdated,
+  });
+
+  @override
+  __TreeNodeState createState() => __TreeNodeState();
+}
+
+class __TreeNodeState extends State<_TreeNode> {
+  bool _isExpanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('catalog_nodes')
+          .doc(widget.nodeId)
+          .snapshots(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
+          return const SizedBox.shrink(); // Don't show anything while loading
         }
-        final nodes = snapshot.data!;
-        return Scaffold(
-          appBar: AppBar(
-            title: Text(_currentTitle),
-            backgroundColor: Colors.orange,
-            leading: _currentParentId != 'root'
-                ? IconButton(
-                    icon: const Icon(Icons.arrow_back),
-                    onPressed: () => Navigator.of(context).pop())
-                : null,
-          ),
-          body: nodes.isEmpty
-              ? const Center(
-                  child: Text('Esta categoría está vacía'),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.all(8),
-                  itemCount: nodes.length,
-                  itemBuilder: (context, index) {
-                    final node = nodes[index];
-                    final bool isFinalProduct = node['isFinalProduct'] ?? false;
-                    return Card(
-                      margin: const EdgeInsets.symmetric(
-                          vertical: 4, horizontal: 8),
-                      elevation: 2,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(12),
-                        onTap: () {
-                          if (!isFinalProduct) {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                  builder: (_) => CatalogNodeScreen(
-                                      parentId: node['id'],
-                                      parentName: node['name'])),
-                            );
-                          }
-                        },
-                        onLongPress: () async {
-                          final docSnap = await FirebaseFirestore.instance
-                              .collection('catalog_nodes')
-                              .doc(node['id'])
-                              .get();
-                          if (context.mounted) {
-                            _showEditDeleteDialog(docSnap);
-                          }
-                        },
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 12),
-                          child: Row(
-                            children: [
-                              if (isFinalProduct)
-                                Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                      color: Colors.green[100],
-                                      shape: BoxShape.circle),
-                                  child: const Icon(Icons.shopping_cart,
-                                      color: Colors.green, size: 20),
-                                )
-                              else
-                                Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                      color: Colors.blue[100],
-                                      shape: BoxShape.circle),
-                                  child: const Icon(Icons.folder,
-                                      color: Colors.blue, size: 20),
-                                ),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      node['name'] ?? 'Sin Nombre',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: isFinalProduct
-                                            ? FontWeight.bold
-                                            : FontWeight.normal,
-                                        color: isFinalProduct
-                                            ? Colors.green[800]
-                                            : null,
-                                      ),
-                                    ),
-                                    if (isFinalProduct)
-                                      Text(
-                                        '\$${(node['price'] as num? ?? 0).toStringAsFixed(2)} - ${node['presentation'] ?? ''}',
-                                        style: const TextStyle(
-                                            fontSize: 14, color: Colors.grey),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                              if (!isFinalProduct)
-                                const Icon(Icons.arrow_forward_ios,
-                                    size: 16, color: Colors.grey)
-                            ],
-                          ),
-                        ),
-                      ),
+        final node = snapshot.data!;
+        if (!node.exists) {
+          return const SizedBox.shrink(); // Or some placeholder for a deleted node
+        }
+        final data = node.data() as Map<String, dynamic>;
+        final bool isFinalProduct = data['isFinalProduct'] ?? false;
+        String displayName = data['name'] ?? 'Sin Nombre';
+        if(isFinalProduct) {
+          final parts = displayName.split(' > ');
+          if (parts.length > 1) {
+            displayName = parts.last;
+          }
+        }
+
+
+        final tile = ListTile(
+          contentPadding: EdgeInsets.only(left: widget.level * 20.0, right: 8),
+          leading: isFinalProduct
+              ? const Icon(Icons.inventory_2, color: Colors.green)
+              : Icon(_isExpanded ? Icons.folder_open : Icons.folder, color: Colors.blue),
+          title: Text(displayName),
+          subtitle: isFinalProduct
+              ? Text(
+                  '\$${(data['price'] as num? ?? 0).toStringAsFixed(2)} - ${data['presentation'] ?? ''}')
+              : null,
+          trailing: isFinalProduct ? null : Icon(_isExpanded ? Icons.expand_less : Icons.expand_more),
+          onTap: () {
+            if (!isFinalProduct) {
+              setState(() {
+                _isExpanded = !_isExpanded;
+              });
+            }
+          },
+          onLongPress: () => widget.onLongPress(node),
+        );
+
+        if (isFinalProduct) {
+          return Card(
+            margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+            child: tile
+            );
+        }
+
+        return Column(
+          children: [
+            Card(
+              margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+              child: tile
+            ),
+            if (_isExpanded)
+              StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('catalog_nodes')
+                    .where('parentId', isEqualTo: widget.nodeId)
+                    .snapshots(),
+                builder: (context, childSnapshot) {
+                  if (!childSnapshot.hasData) {
+                    return const Padding(
+                      padding: EdgeInsets.only(left: 40.0),
+                      child: Center(child: CircularProgressIndicator()),
                     );
-                  },
-                ),
-          floatingActionButton: SpeedDial(
-            icon: Icons.menu,
-            activeIcon: Icons.close,
-            backgroundColor: Colors.orange,
-            children: [
-              SpeedDialChild(
-                  child: const Icon(Icons.add),
-                  label: 'Añadir Elemento',
-                  onTap: _showAddNodeDialog),
-              SpeedDialChild(
-                child: const Icon(Icons.inventory_2),
-                label: 'Ver Materiales',
-                onTap: () {
-                  Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) => const FinalMaterialsScreen()));
+                  }
+                  final children = childSnapshot.data!.docs;
+                  return ListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: children.length,
+                    itemBuilder: (context, index) {
+                      return _TreeNode(
+                        nodeId: children[index].id,
+                        level: widget.level + 1,
+                        onLongPress: widget.onLongPress,
+                        onNodeUpdated: widget.onNodeUpdated,
+                      );
+                    },
+                  );
                 },
               ),
-            ],
-          ),
-          floatingActionButtonLocation:
-              FloatingActionButtonLocation.centerFloat,
+          ],
         );
       },
     );

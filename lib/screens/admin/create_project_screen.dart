@@ -1,8 +1,8 @@
 // create_project_screen.dart
-import 'package:cloud_firestore/cloud_firestore.dart'; // ✅ Importar Firestore
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
-import 'material_selection_screen_temp.dart';
 
 // --- Modelo Auxiliar ---
 class BudgetItem {
@@ -38,7 +38,6 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
   final _laborController = TextEditingController(text: '0');
   final _profitPercentageController = TextEditingController(text: '30');
   String? _selectedClientId;
-  List<Map<String, String>> _clientsList = [];
   final List<BudgetItem> _budgetItems = [];
   double _materialsTotal = 0;
   double _grandTotal = 0;
@@ -60,6 +59,11 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
     super.dispose();
   }
 
+  String? _getCurrentUserId() {
+    final user = FirebaseAuth.instance.currentUser;
+    return user?.uid;
+  }
+
   void _calculateTotals() {
     _materialsTotal = _budgetItems.fold(0, (acc, item) => acc + item.total);
     final transportCost = double.tryParse(_transportController.text) ?? 0;
@@ -71,29 +75,6 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
     setState(() {
       _grandTotal = subtotal + profitAmount;
     });
-  }
-
-  Future<void> _showAddMaterialDialog() async {
-    final result = await Navigator.push<Map<String, dynamic>?>(
-      context,
-      MaterialPageRoute(
-        builder: (context) => const MaterialSelectionScreenTemp(),
-      ),
-    );
-
-    if (result != null && result['isFinalProduct'] == true && mounted) {
-      final item = BudgetItem(
-        catalogNodeId: result['id'],
-        name: result['name'],
-        price: result['price'],
-        quantity: result['quantity'],
-        presentation: result['presentation'] ?? '',
-      );
-      setState(() {
-        _budgetItems.add(item);
-        _calculateTotals();
-      });
-    }
   }
 
   Future<void> _showCreateClientDialog() async {
@@ -251,6 +232,385 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
     }
   }
 
+  void _showQuantityDialog(DocumentSnapshot materialNode) {
+    final quantityController = TextEditingController(text: '1');
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Añadir Material'),
+          content: TextField(
+            controller: quantityController,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(labelText: 'Cantidad'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final quantity = int.tryParse(quantityController.text) ?? 0;
+                if (quantity > 0) {
+                  final data = materialNode.data() as Map<String, dynamic>;
+                  final item = BudgetItem(
+                    catalogNodeId: materialNode.id,
+                    name: data['name'],
+                    price: (data['price'] as num).toDouble(),
+                    quantity: quantity,
+                    presentation: data['presentation'] ?? '',
+                  );
+                  setState(() {
+                    _budgetItems.add(item);
+                    _calculateTotals();
+                  });
+                  Navigator.of(context).pop();
+                }
+              },
+              child: const Text('Añadir'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _deleteNodeAndDescendants(String nodeId) async {
+    final childrenSnapshot = await FirebaseFirestore.instance
+        .collection('catalog_nodes')
+        .where('parentId', isEqualTo: nodeId)
+        .get();
+    for (var child in childrenSnapshot.docs) {
+      await _deleteNodeAndDescendants(child.id);
+    }
+    await FirebaseFirestore.instance
+        .collection('catalog_nodes')
+        .doc(nodeId)
+        .delete();
+  }
+
+  Future<String> _buildFullRouteForId(String? parentId) async {
+    if (parentId == null || parentId == 'root') return '';
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('catalog_nodes')
+          .doc(parentId)
+          .get();
+      if (!doc.exists) return '';
+      final data = doc.data()!;
+      final parentName = data['name'];
+      final grandParentId = data['parentId'];
+      final parentPath = await _buildFullRouteForId(grandParentId);
+      return parentPath.isEmpty ? parentName : '$parentPath > $parentName';
+    } catch (e) {
+      return 'Error cargando ruta';
+    }
+  }
+
+  void _showAddNodeDialog({String parentId = 'root'}) {
+    final formKey = GlobalKey<FormState>();
+    final nameController = TextEditingController();
+    final priceController = TextEditingController();
+    final presentationController = TextEditingController();
+    final supplierController = TextEditingController();
+    bool isFinalProduct = false;
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('Añadir Nuevo Elemento'),
+              content: Form(
+                key: formKey,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextFormField(
+                        controller: nameController,
+                        decoration: InputDecoration(
+                          labelText: 'Nombre',
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12)),
+                          prefixIcon: const Icon(Icons.label),
+                        ),
+                        validator: (v) => v!.isEmpty ? 'Requerido' : null,
+                      ),
+                      const SizedBox(height: 16),
+                      CheckboxListTile(
+                        title: const Text('Es un producto final (con precio)'),
+                        value: isFinalProduct,
+                        onChanged: (value) {
+                          setState(() {
+                            isFinalProduct = value ?? false;
+                          });
+                        },
+                        controlAffinity: ListTileControlAffinity.leading,
+                        contentPadding: EdgeInsets.zero,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                      ),
+                      if (isFinalProduct) ...[
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: priceController,
+                          decoration: InputDecoration(
+                            labelText: 'Precio (USD)',
+                            border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                            prefixIcon: const Icon(Icons.attach_money),
+                          ),
+                          keyboardType: TextInputType.number,
+                          validator: (v) {
+                            if (v!.isEmpty) return 'Requerido';
+                            if (double.tryParse(v) == null) {
+                              return 'Número inválido';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: presentationController,
+                          decoration: InputDecoration(
+                            labelText: 'Presentación (ej. lámina)',
+                            border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                            prefixIcon: const Icon(Icons.description),
+                          ),
+                          validator: (v) => v!.isEmpty ? 'Requerido' : null,
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: supplierController,
+                          decoration: InputDecoration(
+                            labelText: 'Proveedor sugerido',
+                            border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                            prefixIcon: const Icon(Icons.store),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cancelar'),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: () async {
+                    if (formKey.currentState!.validate()) {
+                      String fullName = nameController.text.trim();
+                      if (isFinalProduct) {
+                        final parentRoute =
+                            await _buildFullRouteForId(parentId);
+                        fullName = parentRoute.isEmpty
+                            ? fullName
+                            : '$parentRoute > $fullName';
+                      }
+                      final data = {
+                        'name': fullName,
+                        'parentId': parentId,
+                        'isFinalProduct': isFinalProduct,
+                        if (isFinalProduct)
+                          'price': double.tryParse(priceController.text) ?? 0.0,
+                        if (isFinalProduct)
+                          'presentation': presentationController.text.trim(),
+                        if (isFinalProduct)
+                          'suggestedSupplier': supplierController.text.trim(),
+                        'createdAt': FieldValue.serverTimestamp(),
+                        'createdBy': _getCurrentUserId(),
+                        'updatedAt': FieldValue.serverTimestamp(),
+                        'updatedBy': _getCurrentUserId(),
+                      };
+                      await FirebaseFirestore.instance
+                          .collection('catalog_nodes')
+                          .add(data);
+
+                      if (!context.mounted) return;
+                      Navigator.of(context).pop();
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text('Elemento creado con éxito'),
+                        backgroundColor: Colors.green,
+                      ));
+                    }
+                  },
+                  child: const Text('Guardar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showEditDeleteDialog(DocumentSnapshot node) {
+    final data = node.data() as Map<String, dynamic>;
+    String displayName = data['name'];
+    if (data['isFinalProduct'] == true) {
+      final parts = displayName.split(' > ');
+      if (parts.length > 1) {
+        displayName = parts.last;
+      }
+    }
+    final nameController = TextEditingController(text: displayName);
+    final priceController =
+        TextEditingController(text: data['price']?.toString() ?? '');
+    final presentationController =
+        TextEditingController(text: data['presentation'] ?? '');
+    final supplierController =
+        TextEditingController(text: data['suggestedSupplier'] ?? '');
+    bool isFinalProduct = data['isFinalProduct'] ?? false;
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            return AlertDialog(
+              title: const Text('Editar Elemento'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextFormField(
+                        controller: nameController,
+                        decoration: const InputDecoration(labelText: 'Nombre')),
+                    CheckboxListTile(
+                      title: const Text('Es un producto final (con precio)'),
+                      value: isFinalProduct,
+                      onChanged: (value) {
+                        setStateDialog(() {
+                          isFinalProduct = value ?? false;
+                        });
+                      },
+                    ),
+                    if (isFinalProduct) ...[
+                      TextFormField(
+                          controller: priceController,
+                          decoration:
+                              const InputDecoration(labelText: 'Precio (USD)')),
+                      TextFormField(
+                          controller: presentationController,
+                          decoration:
+                              const InputDecoration(labelText: 'Presentación')),
+                      TextFormField(
+                          controller: supplierController,
+                          decoration: const InputDecoration(
+                              labelText: 'Proveedor sugerido')),
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                if (!isFinalProduct)
+                  TextButton(
+                    onPressed: () {
+                      Navigator.of(context).pop(); // Close the edit dialog
+                      _showAddNodeDialog(
+                          parentId: node.id); // Open add dialog for child
+                    },
+                    child: const Text('Añadir Hijo'),
+                  ),
+                TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Cancelar')),
+                TextButton(
+                  onPressed: () async {
+                    final confirmation = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('Confirmar Eliminación'),
+                        content: const Text(
+                            '¿Estás seguro? Se eliminarán este elemento y todos sus descendientes.'),
+                        actions: [
+                          TextButton(
+                              onPressed: () => Navigator.of(ctx).pop(false),
+                              child: const Text('Cancelar')),
+                          TextButton(
+                              onPressed: () => Navigator.of(ctx).pop(true),
+                              child: const Text('Eliminar',
+                                  style: TextStyle(color: Colors.red))),
+                        ],
+                      ),
+                    );
+                    if (confirmation == true) {
+                      try {
+                        await _deleteNodeAndDescendants(node.id);
+                        if (!context.mounted) return;
+                        Navigator.of(context).pop();
+                        ScaffoldMessenger.of(context)
+                            .showSnackBar(const SnackBar(
+                          content: Text('Eliminado'),
+                          backgroundColor: Colors.red,
+                        ));
+                      } catch (e) {
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context)
+                            .showSnackBar(SnackBar(content: Text('Error: $e')));
+                      }
+                    }
+                  },
+                  child: const Text('Eliminar',
+                      style: TextStyle(color: Colors.red)),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    String fullName = nameController.text.trim();
+                    final parentId = data['parentId'];
+                    if (isFinalProduct) {
+                      final parentRoute = await _buildFullRouteForId(parentId);
+                      fullName = parentRoute.isEmpty
+                          ? fullName
+                          : '$parentRoute > $fullName';
+                    }
+                    final updatedData = {
+                      'name': fullName,
+                      'isFinalProduct': isFinalProduct,
+                      if (isFinalProduct)
+                        'price': double.tryParse(priceController.text) ?? 0.0,
+                      if (isFinalProduct)
+                        'presentation': presentationController.text.trim(),
+                      if (isFinalProduct)
+                        'suggestedSupplier': supplierController.text.trim(),
+                      'updatedAt': FieldValue.serverTimestamp(),
+                      'updatedBy': _getCurrentUserId(),
+                    };
+                    await FirebaseFirestore.instance
+                        .collection('catalog_nodes')
+                        .doc(node.id)
+                        .update(updatedData);
+
+                    if (!context.mounted) return;
+                    Navigator.of(context).pop();
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                      content: Text('Actualizado'),
+                      backgroundColor: Colors.blue,
+                    ));
+                  },
+                  child: const Text('Actualizar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -280,7 +640,7 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
                         return const Center(
                             child: Text("Cargando clientes..."));
                       }
-                      _clientsList = snapshot.data!.docs.map((doc) {
+                      final clientsList = snapshot.data!.docs.map((doc) {
                         return {
                           'uid': doc.id,
                           'fullName': (doc.get('fullName') ?? '').toString(),
@@ -288,10 +648,9 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
                       }).toList();
 
                       return DropdownButtonFormField<String>(
-                        initialValue:
-                            _selectedClientId, // ✅ Corregido: 'value' -> 'initialValue'
+                        initialValue: _selectedClientId,
                         hint: const Text('Seleccionar Cliente'),
-                        items: _clientsList.map((client) {
+                        items: clientsList.map((client) {
                           return DropdownMenuItem(
                             value: client['uid'],
                             child: Text(client['fullName']!),
@@ -324,11 +683,58 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
                   (value?.isEmpty ?? true) ? 'Ingrese un nombre' : null,
             ),
             const Divider(height: 20),
+            ExpansionTile(
+              title: const Text(
+                'Materiales',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: ElevatedButton.icon(
+                    onPressed: () => _showAddNodeDialog(),
+                    icon: const Icon(Icons.add),
+                    label: const Text('Añadir Categoría Raíz'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  height: 300, // Adjust height as needed
+                  child: FutureBuilder<QuerySnapshot>(
+                    future: FirebaseFirestore.instance
+                        .collection('catalog_nodes')
+                        .where('parentId', isEqualTo: 'root')
+                        .get(),
+                    builder: (context, snapshot) {
+                      if (!snapshot.hasData) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      final rootNodes = snapshot.data!.docs;
+                      return ListView.builder(
+                        itemCount: rootNodes.length,
+                        itemBuilder: (context, index) {
+                          return _TreeNode(
+                            nodeId: rootNodes[index].id,
+                            level: 0,
+                            onMaterialSelected: _showQuantityDialog,
+                            onLongPress: _showEditDeleteDialog,
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const Divider(height: 20),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text(
-                  'Materiales',
+                  'Materiales Seleccionados',
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
                 Text(
@@ -343,11 +749,6 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
                       '\$${item.price.toStringAsFixed(2)} c/u (${item.presentation})'),
                   trailing: Text('\$${item.total.toStringAsFixed(2)}'),
                 )),
-            TextButton.icon(
-              onPressed: _showAddMaterialDialog,
-              icon: const Icon(Icons.add),
-              label: const Text('Añadir Material'),
-            ),
             const Divider(height: 20),
             const Text(
               'Costos y Ganancia',
@@ -411,6 +812,123 @@ class _CreateProjectScreenState extends State<CreateProjectScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _TreeNode extends StatefulWidget {
+  final String nodeId;
+  final int level;
+  final Function(DocumentSnapshot) onMaterialSelected;
+  final Function(DocumentSnapshot) onLongPress;
+
+  const _TreeNode({
+    required this.nodeId,
+    required this.level,
+    required this.onMaterialSelected,
+    required this.onLongPress,
+  });
+
+  @override
+  __TreeNodeState createState() => __TreeNodeState();
+}
+
+class __TreeNodeState extends State<_TreeNode> {
+  bool _isExpanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('catalog_nodes')
+          .doc(widget.nodeId)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData || !snapshot.data!.exists) {
+          return const SizedBox.shrink();
+        }
+        final node = snapshot.data!;
+        final data = node.data() as Map<String, dynamic>;
+        final bool isFinalProduct = data['isFinalProduct'] ?? false;
+        String displayName = data['name'] ?? 'Sin Nombre';
+        if (isFinalProduct) {
+          final parts = displayName.split(' > ');
+          if (parts.length > 1) {
+            displayName = parts.last;
+          }
+        }
+
+        Color folderColor = widget.level == 0 ? Colors.orange : Colors.blue;
+
+        final tile = ListTile(
+          contentPadding: EdgeInsets.only(left: widget.level * 20.0, right: 8),
+          leading: isFinalProduct
+              ? const Icon(Icons.inventory_2, color: Colors.green)
+              : Icon(_isExpanded ? Icons.folder_open : Icons.folder,
+                  color: folderColor),
+          title: Text(displayName),
+          subtitle: isFinalProduct
+              ? Text(
+                  '\$${(data['price'] as num? ?? 0).toStringAsFixed(2)} - ${data['presentation'] ?? ''}')
+              : null,
+          trailing: isFinalProduct
+              ? null
+              : Icon(_isExpanded ? Icons.expand_less : Icons.expand_more),
+          onTap: () {
+            if (isFinalProduct) {
+              widget.onMaterialSelected(node);
+            } else {
+              setState(() {
+                _isExpanded = !_isExpanded;
+              });
+            }
+          },
+          onLongPress: () => widget.onLongPress(node),
+        );
+
+        if (isFinalProduct) {
+          return Card(
+              margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+              child: tile);
+        }
+
+        return Column(
+          children: [
+            Card(
+                margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                child: tile),
+            if (_isExpanded)
+              StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('catalog_nodes')
+                    .where('parentId', isEqualTo: widget.nodeId)
+                    .snapshots(),
+                builder: (context, childSnapshot) {
+                  if (!childSnapshot.hasData) {
+                    return const Padding(
+                      padding: EdgeInsets.only(left: 40.0),
+                      child: Center(child: CircularProgressIndicator()),
+                    );
+                  }
+                  final children = childSnapshot.data!.docs;
+                  return ListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: children.length,
+                    itemBuilder: (context, index) {
+                      return _TreeNode(
+                        nodeId: children[index].id,
+                        level: widget.level + 1,
+                        onMaterialSelected: widget.onMaterialSelected,
+                        onLongPress: widget.onLongPress,
+                      );
+                    },
+                  );
+                },
+              ),
+          ],
+        );
+      },
     );
   }
 }
